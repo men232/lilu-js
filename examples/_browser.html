@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+  <div id="result">Checking access...</div>
+</body>
+<script src="../dist/lilu.umd.min.js"></script>
+<script>
+  const user = {
+    id: 1,
+    name: 'Andrew L.',
+    email: 'andrew.io.dev@gmail.com',
+    role: ['ROLE_USER']
+  };
+
+  const order = {
+    title: 'Netflix Subscription',
+    owner: 1,
+    placedAt: new Date(),
+    items: [1, 2, 3, 4]
+  };
+
+  const permissions = [{
+    title: 'Order Review',
+    actions: ['order.view'],
+    rules: [{
+      title: 'Owned',
+      operation: 'AND',
+      conditions: [
+        'env.hours >= 8',
+        'env.hours <= 18',
+        'order.owner == user.id',
+      ]
+    }]
+  }];
+
+  const lilu = new window.LiluJS.Lilu({
+    strict: false,
+    enviroment: {
+      env: {
+        hours: () => (new Date()).getHours(),
+        minutes: () => (new Date()).getMinutes()
+      },
+      user: user
+    },
+    permissions: permissions
+  });
+
+  lilu.granted('order.view', { order }, function(err, result) {
+    if (err) {
+      console.warn('Failed to process lilu access', err);
+      return;
+    }
+
+    if (result.passed) {
+      document.getElementById('result')
+        .innerHTML = 'Yahu!!! I have access to review order.';
+    } else {
+      document.getElementById('result')
+        .innerHTML = 'Oops!! I don\'t have access to review order.';
+    }
+  });
+</script>
+</html>
