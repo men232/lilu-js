@@ -27,7 +27,7 @@ permissions:
   - title: 'Recently Placed'
     operation: AND
     conditions:
-    - order.placedAt = {{ env.now - (1000 * 60 * 60 * 24 * 5) }}
+    - order.placedAt == {{ env.now - (1000 * 60 * 60 * 24 * 5) }}
 ```
 
 # Usage
