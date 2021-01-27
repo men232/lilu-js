@@ -1,6 +1,6 @@
 {
   "name": "@andrew_l/lilu",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Attribute-based access control with some sugar",
   "main": "dist/lilu.cjs.js",
   "module": "dist/lilu.esm.js",

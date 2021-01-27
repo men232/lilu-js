@@ -1,5 +1,7 @@
 import * as array from '../utils/array';
 import LiLuExpression from '../LiLuExpression';
+import tbag from '../utils/tbag';
+import timer from '../utils/timer';
 
 export default class LiluPermissionRule {
   constructor(options = {}, operators, strict = false) {
@@ -21,24 +23,56 @@ export default class LiluPermissionRule {
 
   match(context) {
     const trace = [];
+    const operation = this.operation;
+    const tRoot = tbag();
+    const tCond = tRoot.child();
 
-    let isMatched = false;
+    let matched;
 
     const conditionRun = (condition) => {
       const r = condition.eval(context);
 
-      trace.push({ condition, evalResult: r });
+      tCond.w('CONDITION %o PASSED = %o\n • BY VALUES:\n   • “%s” = %o\n   • “%s” = %o',
+        condition.raw,
+        r.result,
+        r.left.raw,
+        r.left.ensured,
+        r.right.raw,
+        r.right.ensured
+      );
+
+      trace.push({
+        type: 'condition',
+        item: condition.toJSON(),
+        evalResult: r
+      });
 
       return r.result === true;
     };
 
+    const matchTimer = timer();
+
     if (this.operation === 'OR') {
-      isMatched = this.conditions.some(conditionRun);
+      matched = this.conditions.some(conditionRun);
     } else {
-      isMatched = this.conditions.every(conditionRun);
+      matched = this.conditions.every(conditionRun);
     }
 
-    return { matched: isMatched, trace };
+    const ms = matchTimer.click();
+
+    tRoot.w('RULE %o RESULT = %o (%d ms)',
+      this.title,
+      matched,
+      ms
+    );
+
+    return {
+      matched,
+      operation,
+      trace,
+      ms,
+      t: tRoot,
+    };
   }
 
   /**

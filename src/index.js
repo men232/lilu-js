@@ -10,6 +10,7 @@ import timer from './utils/timer';
 
 import LiluPermission from './LiluPermission';
 import EXPRESSION_OPERATORS from './LiLuExpression/operators';
+import tbag from './utils/tbag';
 
 const d = debug('lilu:permission');
 
@@ -182,6 +183,9 @@ export class Lilu {
   async _grantedAny(actions, options = {}) {
     options = options || {};
 
+    const tRoot = tbag();
+    const trace = [];
+
     const startTimer = timer();
 
     let result = null;
@@ -195,12 +199,28 @@ export class Lilu {
 
       result = await this._granted(actionName, opts);
 
+      tRoot.childs.push(...result.t.childs);
+      trace.push(...result.trace.__obj);
+
       if (result.passed) {
         break;
       }
     }
 
-    return result;
+    const ms = startTimer.click();
+
+    tRoot.w('GRANTED ANY: [%s] (%d ms)', actions.join(' OR '), ms);
+
+    return {
+      ...result,
+      ms,
+      trace: {
+        toString: () => tRoot.collect(),
+        toJSON: () => obj.clone(trace),
+        __obj: trace
+      },
+      t: tRoot,
+    };
   }
 
   async _grantedMany(actions, options = {}) {
@@ -210,11 +230,14 @@ export class Lilu {
 
     const allow = [];
     const disallow = [];
+    const trace = [];
+    const tRoot = tbag();
 
+    let procActions = [...actions];
     const startTimer = timer();
 
-    while(actions.length > 0) {
-      const actionName = actions.pop();
+    while(procActions.length > 0) {
+      const actionName = procActions.pop();
 
       const opts = { ...options };
 
@@ -224,9 +247,12 @@ export class Lilu {
 
       let result = await this._granted(actionName, opts);
 
+      tRoot.childs.push(...result.t.childs);
+      trace.push(...result.trace.__obj);
+
       if (result.passed) {
         // take all actions from permission and exclude from processing list
-        actions = array.pull(actions, result.permission.actions);
+        procActions = array.pull(procActions, result.permission.actions);
 
         allow.push(result);
       } else {
@@ -236,7 +262,19 @@ export class Lilu {
 
     const ms = startTimer.click();
 
-    return { allow, disallow, ms };
+    tRoot.w('GRANTED: [%s] (%d ms)', actions.join(' AND '), ms);
+
+    return {
+      allow,
+      disallow,
+      ms,
+      trace: {
+        toString: () => tRoot.collect(),
+        toJSON: () => obj.clone(trace),
+        __obj: trace
+      },
+      t: tRoot,
+    };
   }
 
   async _granted(actionName, options = {}) {
@@ -253,6 +291,9 @@ export class Lilu {
     let permission = null;
     let passed = false;
     let mismatched = [];
+
+    const tRoot = tbag();
+    let trace = [];
 
     const wholeContext = obj.clone(context);
 
@@ -279,14 +320,18 @@ export class Lilu {
     };
 
     const handlePermission = async permission => {
-      const handleTimer = timer();
-
       await ensurePermissionVariables(permission);
 
       const result = permission.check(wholeContext);
-      const ms = handleTimer.click();
 
-      printPermissionCheckDebug(permission, result, ms);
+      tRoot.attach(result.t);
+      result.t.w(' • TARGET = %s', actionName);
+
+      trace.push({
+        type: 'permission',
+        item: permission.toJSON(),
+        ...result
+      });
 
       if (result.passed) {
         passed = true;
@@ -316,11 +361,19 @@ export class Lilu {
 
     const ms = startTimer.click();
 
+    tRoot.w('GRANTED: [%s] (%d ms)', actionName, ms);
+
     return {
       passed,
       permission: permission ? permission.toJSON() : null,
       mismatched,
-      ms
+      ms,
+      trace: {
+        toString: () => tRoot.collect(),
+        toJSON: () => obj.clone(trace),
+        __obj: trace
+      },
+      t: tRoot,
     };
   }
 }
@@ -345,28 +398,3 @@ Object.defineProperty(Lilu.prototype, 'toJSON', {
 Object.defineProperty(Lilu.prototype, 'name', {
   value: 'Lilu'
 });
-
-function printPermissionCheckDebug(permission, result, ms) {
-  d('CHECK PERMISSION %o %o WHERE = %O\n PASSED: %o (%dms)',
-    permission.title,
-    permission.actions,
-    result.context,
-    result.passed,
-    ms
-  );
-
-  for(const { rule, isMatched, trace, ms } of result.trace) {
-    d('  - RULE %o RESULT = %o (%dms)', rule.title, isMatched, ms);
-
-    for(const { condition, evalResult } of trace) {
-      d('    - CONDITION %o PASSED = %o\n      BY VALUES:\n        “%s” = %o\n        “%s” = %o',
-        condition._raw,
-        evalResult.result,
-        evalResult.left.raw,
-        evalResult.left.ensured,
-        evalResult.right.raw,
-        evalResult.right.ensured
-      );
-    }
-  }
-}

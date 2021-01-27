@@ -8,7 +8,7 @@
 <body>
   <div id="result">Checking access...</div>
 </body>
-<script src="../dist/lilu.umd.min.js"></script>
+<script src="../dist/lilu.umd.js"></script>
 <script>
   const user = {
     id: 1,
@@ -36,9 +36,20 @@
         'order.owner == user.id',
       ]
     }]
+  }, {
+    title: 'Order Create',
+    actions: ['order.create'],
+    rules: [{
+      title: 'Owned',
+      operation: 'AND',
+      conditions: [
+        'env.hours >= 8',
+        'env.hours <= 18'
+      ]
+    }]
   }];
 
-  const lilu = new window.LiluJS.Lilu({
+  const lilu = window.lilu({
     strict: false,
     enviroment: {
       env: {
@@ -50,11 +61,14 @@
     permissions: permissions
   });
 
-  lilu.granted('order.view', { order }, function(err, result) {
+  lilu.grantedMany('order.*', { order }, function(err, result) {
     if (err) {
       console.warn('Failed to process lilu access', err);
       return;
     }
+
+    console.log(result.trace.toString());
+    console.log(result.trace.toJSON());
 
     if (result.passed) {
       document.getElementById('result')

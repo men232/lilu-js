@@ -2,6 +2,7 @@ import * as array from '../utils/array';
 import * as obj from '../utils/object';
 import timer from '../utils/timer';
 import LiluPermissionRule from './LiluPermissionRule';
+import tbag from '../utils/tbag';
 
 export default class LiluPermission {
   constructor(options = {}, operators, strict = false) {
@@ -28,26 +29,40 @@ export default class LiluPermission {
   }
 
   check(context) {
-    const rulesTrace = [];
+    const tRoot = tbag();
+    const trace = [];
 
     const ruleRun = (rule) => {
-      const matchTimer = timer();
-      const { matched: isMatched, trace } = rule.match(context);
-      const ms = matchTimer.click();
+      const result = rule.match(context);
 
-      rulesTrace.push({ rule, isMatched, trace, ms });
+      tRoot.attach(result.t);
 
-      return isMatched;
+      trace.push({
+        type: 'rule',
+        item: rule.toJSON(),
+        ...result,
+        ms
+      });
+
+      return result.matched;
     };
 
     const startTimer = timer();
     const isAllRulesPassed = this.rules.every(ruleRun);
+    const ms = startTimer.click();
+
+    tRoot.w('PERMISSION %o\n • PASSED: %o (%d ms)',
+      this.title,
+      isAllRulesPassed,
+      ms
+    );
 
     return {
       passed: isAllRulesPassed,
       context,
-      trace: rulesTrace,
-      ms: startTimer.click()
+      trace,
+      t: tRoot,
+      ms
     };
   }
 

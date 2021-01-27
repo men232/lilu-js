@@ -71,7 +71,7 @@ Object.defineProperty(LiLuExpression.prototype, 'toJSON', {
     return {
       name: this.name,
       strict: this.strict,
-      str: this.str,
+      str: this.raw,
       variables: this.variables,
       operators: Object.keys(this._operators),
       isValid: this.isValid
