@@ -65,7 +65,8 @@ export default function evalExpression(context = {}) {
       right.raw,
       rightValue
     );
-
+  'string' | 'object' | 'number' | 'boolean' |
+  'array' | 'null';
     throw new LiluExpressionEvalError(
       `Execution error: ${err.message}`,
       this._raw,
