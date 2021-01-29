@@ -1,9 +1,17 @@
+import debug from 'debug';
+import evaluate from 'static-eval';
+import esprima from 'esprima';
+import * as ESTree from 'estree';
+
 import * as obj from './utils/object';
 import { DEFAULT_OPERATORS, OperatorMap } from './operators';
 import { LiluExpressionParserError } from './errors/LiluExpressionParserError';
 
+const dParse = debug('lilu:expression:parse');
+const dCast = debug('lilu:expression:cast');
+
 // eslint-disable-next-line no-useless-escape
-const EXPRESSION_REG_EXP = /(\{\{(.*?)\}\}|\[.*?\]|\".*?\"|[^\s]+)/g;
+const EXPRESSION_REG_EXP = /({{(.*?)}}|\[.*?]|".*?"|[^\s]+)/g;
 
 export interface ExpressionOptions {
   strict: boolean,
@@ -111,6 +119,84 @@ export class Expression {
 
   parse(): void {
     const str = this._raw;
+    const parsed = [];
+    const variables = [];
+
+    dParse('LINE = "%s"', str);
+
+    let matches;
+
+    while ((matches = EXPRESSION_REG_EXP.exec(str)) !== null) {
+      const str = (matches[3] || matches[2] || matches[1] || 'null').trim();
+
+      let type = 'unknown';
+      let value = null;
+
+      if (!matches || !matches[0]) {
+        // noting
+      } else {
+        [value, type] = this._castExpression(str);
+      }
+
+      dCast('STR = "%s"\n    TYPE = %s\n    RESULT = %o', str, type, value);
+
+      parsed.push({ type, value, raw: str });
+
+      if (type === 'variable') {
+        variables.push(value);
+      } else if (type === 'expression') {
+        variables.push(
+          ...this._extractEsprimaVariables(value)
+        );
+      }
+    }
+  }
+
+  protected _castExpression(str: string): [string | ESTree.Expression, string] {
+    try {
+      let type: string = 'unknown';
+      let value: string | ESTree.Expression = str;
+
+      if (this._operators[str]) {
+        return [str, 'operator'];
+      }
+
+      const expr = esprima.parseScript(str).body[0] as ESTree.ExpressionStatement;
+      const ast = expr.expression;
+
+      switch (true) {
+        case ast.type === 'Identifier' || ast.type === 'MemberExpression':
+          type = 'variable';
+          break;
+
+        case ast.type === 'Literal':
+          value = evaluate(ast, {});
+          type = this._castType(value);
+          break;
+
+        case ast.type === 'ArrayExpression' || ast.type === 'BinaryExpression':
+          value = ast;
+          type = 'expression';
+          break;
+      }
+
+      return [value, type];
+    } catch (_) {
+      return [str, 'unknown'];
+    }
+  }
+
+  protected _castType(value: any): string {
+    switch (true) {
+      case value === null:
+        return 'null';
+
+      case Array.isArray(value):
+        return 'array';
+
+      default:
+        return typeof value;
+    }
   }
 
   toString(): string {
