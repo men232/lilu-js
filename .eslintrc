@@ -6,8 +6,8 @@
     "commonjs": true,
     "es6": true
   },
-  "parser": "babel-eslint",
-  "extends": ["eslint:recommended"],
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint"],
   "rules": {
     "quotes": ["error", "single"],
     "no-fallthrough": ["error", { "commentPattern": "break[\\s\\w]*omitted" }],

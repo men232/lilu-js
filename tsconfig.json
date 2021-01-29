@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "outDir": "./dist",
+    "moduleResolution": "node",
+    "declaration": true,
+    "esModuleInterop": true,
+    "target": "es2015",
+
+    "skipLibCheck": true,
+    "incremental": true,
+    "sourceMap": true,
+    "allowJs": true,
+
+    "strict": true,
+    "strictFunctionTypes": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": false,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strictNullChecks": true,
+    "alwaysStrict": true
+  },
+  "include": ["lib/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"],
+  "lib": ["es2015"]
+}
