@@ -1,78 +1,35 @@
-import format from './format';
+module.exports = function archy (obj, prefix, opts) {
+    if (prefix === undefined) prefix = '';
+    if (!opts) opts = {};
+    var chr = function (s) {
+        var chars = {
+            '│' : '|',
+            '└' : '`',
+            '├' : '+',
+            '─' : '-',
+            '┬' : '-'
+        };
+        return opts.unicode === false ? chars[s] : s;
+    };
 
-export default function createTBag() {
-  const rootChilds = [];
-  const lines = [];
+    if (typeof obj === 'string') obj = { label : obj };
 
-  const collect = ({ lines, childs }, pad = 0) => {
-    if (!lines.length && !childs.length) {
-      return '';
-    }
+    var nodes = obj.nodes || [];
+    var lines = (obj.label || '').split('\n');
+    var splitter = '\n' + prefix + (nodes.length ? chr('│') : ' ') + ' ';
 
-    const p = ''.padStart(pad, ' ');
+    return prefix
+        + lines.join(splitter) + '\n'
+        + nodes.map(function (node, ix) {
+            var last = ix === nodes.length - 1;
+            var more = node.nodes && node.nodes.length;
+            var prefix_ = prefix + (last ? ' ' : chr('│')) + ' ';
 
-    let result = '\n' + p + lines.join('\n' + p);
-
-    for(const item of childs) {
-      result += '\n' + ''.padStart(pad) + '  ' + collect(item, pad + 2);
-    }
-
-    return result.trim();
-  };
-
-  const rootCollect = () => collect({ lines, childs: rootChilds });
-
-  return {
-    w(...args) {
-        const line = format(...args);
-
-      lines.push(...line.split('\n'));
-
-      return this;
-    },
-    attach(instance) {
-      return this.child(instance);
-    },
-    child(instance) {
-      instance = instance || createTBag();
-
-      instance.isChild = true;
-      instance.collect = this.isChild
-        ? this.collect
-        : rootCollect;
-
-      rootChilds.push(instance);
-
-      return instance;
-    },
-    childs: rootChilds,
-    lines: lines,
-    collect: rootCollect,
-    str: () => collect({ lines, childs: rootChilds })
-  }
-}
-
-/*
-  const t = createTBag();
-
-  console.log(
-  t
-    .w('line 1')
-    .w('line 2')
-    .w('line 3')
-    .w('line 4')
-    .child()
-    .w('line 1.1 with\n * some 1\n * some 2')
-    .w('line 1.2')
-    .w('line 1.3')
-    .w('line 1.4')
-    .child()
-    .w('line 2.1')
-    .w('line 2.2')
-    .w('line 2.3')
-    .w('line 2.4')
-    .collect()
-  );
-  console.log('-----');
-  console.log(t.collect())
- */
+            return prefix
+                + (last ? chr('└') : chr('├')) + chr('─')
+                + (more ? chr('┬') : chr('─')) + ' '
+                + archy(node, prefix_, opts).slice(prefix.length + 2)
+            ;
+        }).join('')
+    ;
+};

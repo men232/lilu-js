@@ -22,6 +22,6 @@
     "alwaysStrict": true
   },
   "include": ["lib/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"],
+  "exclude": ["node_modules", "dist", "src", "**/*.test.ts"],
   "lib": ["es2015"]
 }

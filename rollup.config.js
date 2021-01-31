@@ -6,7 +6,10 @@ import json from '@rollup/plugin-json';
 
 import pkg from './package.json';
 
-const ts = compilerOptions => typescript({ tsconfigOverride: { compilerOptions } });
+const ts = compilerOptions => typescript({
+  tsconfig: 'tsconfig.json',
+  tsconfigOverride: { compilerOptions }
+});
 
 export default [
   // Browser-friendly UMD build
@@ -18,10 +21,10 @@ export default [
     ],
     external: [],
     plugins: [
-      ts({ target: 'es3' }),
       json(),
       resolve({ preferBuiltins: false, browser: true }),
-      commonjs()
+      commonjs(),
+      ts({ target: 'es5', downlevelIteration: true }),
     ]
   },
 

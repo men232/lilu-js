@@ -1,1 +1,3 @@
-export const test = true;
+import { Lilu } from './lilu';
+
+export { Lilu };

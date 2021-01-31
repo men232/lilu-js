@@ -12,7 +12,7 @@ export class LiluExpressionParserError extends Error {
   }
 
   toString(): string {
-    return `${this.name} (${this.expressionText}): ${this.message}`;
+    return `${this.name}(${this.code}, "${this.expressionText}", ${this.message})`;
   }
 
   toJSON(): object {

@@ -31,9 +31,14 @@
       title: 'Owned',
       operation: 'AND',
       conditions: [
+        'order.owner in [user.id, 3, 5, 6]',
+      ]
+    }, {
+      title: 'Working Time',
+      operation: 'AND',
+      conditions: [
         'env.hours >= 8',
         'env.hours <= 18',
-        'order.owner == user.id',
       ]
     }]
   }, {
@@ -50,7 +55,7 @@
   }];
 
   const lilu = window.lilu({
-    strict: false,
+    strict: true,
     enviroment: {
       env: {
         hours: () => (new Date()).getHours(),
@@ -61,14 +66,14 @@
     permissions: permissions
   });
 
-  lilu.grantedMany('order.*', { order }, function(err, result) {
+  lilu.granted('order.view', { order }, function(err, result) {
     if (err) {
       console.warn('Failed to process lilu access', err);
       return;
     }
 
+    console.log(result.__t);
     console.log(result.trace.toString());
-    console.log(result.trace.toJSON());
 
     if (result.passed) {
       document.getElementById('result')
