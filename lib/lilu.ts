@@ -324,7 +324,7 @@ export class Lilu {
         if (isTimeoutError) isTimeout = true;
 
         tChild
-          .w(isTimeoutError ? '⏰ @PERMISSION' : '❌❌❌ @PERMISSION')
+          .w(isTimeoutError ? '⏰ (Permission)' : '❌❌❌ (Permission)')
           .w('• title = %s', permission.title)
           .w('• err_code = %d', errCode)
           .w('• err_msg = %s', errMsg)

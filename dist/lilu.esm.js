@@ -121,21 +121,22 @@ function textTable() {
 
   let MAX_LENGTH_PER_CELL = [];
   let MAX_LINES_PER_ROWS = [];
-  let MAP_ROW_TYPE = [];
+  let MAP_IS_ROW_LABEL = [];
   let MAX_CELL_AMOUNT = 0;
 
   const api = {
     row: createRow,
-    splitter: createSplitter,
-    hr: createHR,
     label: createLabel,
     tableWrite: complete
   };
 
   function complete() {
+    const isLabelFirst = !!MAP_IS_ROW_LABEL[0];
+    const isLabelLast = !!MAP_IS_ROW_LABEL[rows.length - 1];
+
     const maxLabelLength = Math.max(
       ...rows
-        .filter((v, idx) => MAP_ROW_TYPE[idx] === 'label')
+        .filter((v, idx) => !!MAP_IS_ROW_LABEL[idx])
         .map(row => Math.max(...row[0].map(v => v.length)))
     );
 
@@ -146,31 +147,33 @@ function textTable() {
       MAX_LENGTH_PER_CELL = MAX_LENGTH_PER_CELL.map(v => v + avgDiff);
     }
 
-    const cellSplitter = '     ';
+    const start = '┌' + MAX_LENGTH_PER_CELL
+      .map(len => ''.padStart(len + 2, '─'))
+      .join(isLabelFirst ? '─' : '┬') + '┐\n';
+
+    const end = '\n└' + MAX_LENGTH_PER_CELL
+      .map(len => ''.padStart(len + 2, '─'))
+      .join(isLabelLast ? '─' : '┴') + '┘';
 
     const result = ''
+      + start
       + rows.map((row, rowIdx) => {
-        const isLabel = MAP_ROW_TYPE[rowIdx] === 'label';
-        const isSplitter = MAP_ROW_TYPE[rowIdx] === 'splitter';
-        const isHR = MAP_ROW_TYPE[rowIdx] === 'hr';
+        const lines = [];
+        const isLabel = !!MAP_IS_ROW_LABEL[rowIdx];
+        const isNextLabel = !!MAP_IS_ROW_LABEL[rowIdx + 1];
         const isLastRow = rowIdx === (rows.length - 1);
 
-        const rowSplitter = isLastRow ? '' : '\n';
+        const rowSplitter = '\n├' + MAX_LENGTH_PER_CELL
+          .map(len => ''.padStart(len + 2, '─'))
+          .join(
+            isLabel
+              ? (isLastRow || isNextLabel ? '─' : '┬')
+              : (isNextLabel ? '┴' : '┼')
+          ) + '┤\n';
 
-        if (isSplitter || isHR) {
-          const cells = [];
-          const cellSplitter = isSplitter ? '     ' : '-----';
-          const padSym = isHR ? '-' : ' ';
-
-          for (let cellIdx = 0; cellIdx < MAX_CELL_AMOUNT; cellIdx++) {
-            const padding = MAX_LENGTH_PER_CELL[cellIdx];
-            cells.push('--'.padEnd(padding, padSym));
-          }
-
-          return cells.join(cellSplitter) + rowSplitter;
-        }
-
-        const lines = [];
+        const cellSplitter = isLabel
+          ? '   '
+          : ' │ ';
 
         for (let lineIdx = 0; lineIdx < MAX_LINES_PER_ROWS[rowIdx]; lineIdx++) {
           const cells = [];
@@ -181,20 +184,22 @@ function textTable() {
               : '';
 
             if (isLabel) {
-              const padding = MAX_LENGTH_PER_CELL.reduce((a, b) => a + b + 2, 0) + 1;
-              cells.push(coll.padEnd(padding, ' '));
+              const maxLen = MAX_LENGTH_PER_CELL.reduce((a, b) => a + b + 2, 0);
+              cells.push(coll.padEnd(maxLen, ' '));
               break;
             } else {
-              const padding = MAX_LENGTH_PER_CELL[cellIdx];
-              cells.push(coll.padEnd(padding, ' '));
+              const maxLen = MAX_LENGTH_PER_CELL[cellIdx];
+              cells.push(coll.padEnd(maxLen, ' '));
             }
           }
 
-          lines.push(cells.join(cellSplitter));
+          lines.push('│ ' + cells.join(cellSplitter) + ' │');
         }
 
-        return lines.join('\n') + rowSplitter;
-      }).join('');
+        return lines.join('\n') + (isLastRow ? '' : rowSplitter);
+      }).join('')
+      + end
+    ;
 
     return instance.w(result);
   }
@@ -205,12 +210,12 @@ function textTable() {
     const cellIdx = row.length;
 
     MAX_LENGTH_PER_CELL[cellIdx] = Math.max(
-      MAX_LENGTH_PER_CELL[cellIdx] || 4,
+      MAX_LENGTH_PER_CELL[cellIdx] || 0,
       ...lines.map(v => v.length)
     );
 
     MAX_LINES_PER_ROWS[rowIdx] = Math.max(
-      MAX_LINES_PER_ROWS[rowIdx] || 1,
+      MAX_LINES_PER_ROWS[rowIdx] || 0,
       lines.length
     );
 
@@ -233,18 +238,6 @@ function textTable() {
     }
   }
 
-  function createSplitter() {
-    createRow();
-    MAP_ROW_TYPE[rows.length - 1] = 'splitter';
-    return api;
-  }
-
-  function createHR() {
-    createRow();
-    MAP_ROW_TYPE[rows.length - 1] = 'hr';
-    return api;
-  }
-
   function createLabel(fmt, ...args) {
     createRow();
     const rowIdx = rows.length - 1;
@@ -252,7 +245,7 @@ function textTable() {
       const cellLength = MAX_LENGTH_PER_CELL[0] || 0;
       createCell(rowIdx, fmt || '', ...args);
       MAX_LENGTH_PER_CELL[0] = cellLength;
-      MAP_ROW_TYPE[rowIdx] = 'label';
+      MAP_IS_ROW_LABEL[rowIdx] = true;
 
     return api;
   }
@@ -726,7 +719,7 @@ class Rule {
         const complete = (result) => {
             const ms = matchTimer.click();
             tRoot
-                .w('%s @RULE %dms ⍄ %o', result ? '✅' : '🔴', ms, this._title)
+                .w('%s (Rule) %s / %dms', result ? '✅' : '🔴', this._title, ms)
                 .w('• MATCHED = %o', result);
             return {
                 result,
@@ -739,7 +732,7 @@ class Rule {
         const fail = (errCode, errMsg) => {
             const ms = matchTimer.click();
             tRoot
-                .w('❌ @RULE %d ms', ms)
+                .w('❌ (Rule) %d / ms', ms)
                 .w('• title = %o', this._title)
                 .w('• err_code = %d', errCode)
                 .w('• err_msg =')
@@ -771,11 +764,12 @@ class Rule {
                 result: r,
             });
             tCond
-                .w('%s @CONDITION[%d]', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
-                .child().w('"%s" = "%o"', condition.raw, r.error
+                .w('%s (Condition #%d)', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
+                .child()
+                .table()
+                .label('"%s" = "%o"', condition.raw, r.error
                 ? `err: ${r.errCode}`
                 : r.result)
-                .child().table()
                 .row()
                 .cell('type')
                 .cell('value')
@@ -867,7 +861,7 @@ class Permission {
             const ms = startTimer.click();
             const symPrefix = result ? '✅' : '🔴';
             tRoot
-                .w('%s @PERMISSION %dms ⍄ %o', symPrefix, ms, this._title)
+                .w('%s (Permission) %s / %dms', symPrefix, this._title, ms)
                 .w('• PASSED = %o', result);
             return {
                 error: false,
@@ -880,7 +874,7 @@ class Permission {
         const fail = (errCode, errMsg) => {
             const ms = startTimer.click();
             tRoot
-                .w('❌ @PERMISSION %dms', ms)
+                .w('❌ (Permission) / %dms', ms)
                 .w('• title = %o', this.title)
                 .w('• err_code = %d', errCode)
                 .w('• err_msg = %s', errMsg)
@@ -1190,7 +1184,7 @@ class Lilu {
                 if (isTimeoutError)
                     isTimeout = true;
                 tChild
-                    .w(isTimeoutError ? '⏰ @PERMISSION' : '❌❌❌ @PERMISSION')
+                    .w(isTimeoutError ? '⏰ (Permission)' : '❌❌❌ (Permission)')
                     .w('• title = %s', permission.title)
                     .w('• err_code = %d', errCode)
                     .w('• err_msg = %s', errMsg)

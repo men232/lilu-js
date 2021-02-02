@@ -106,7 +106,7 @@ export class Permission {
       const symPrefix = result ? '✅' : '🔴';
 
       tRoot
-        .w('%s @PERMISSION %dms ⍄ %o', symPrefix, ms, this._title)
+        .w('%s (Permission) %s / %dms', symPrefix, this._title, ms)
         .w('• PASSED = %o', result);
 
       return {
@@ -122,7 +122,7 @@ export class Permission {
       const ms = startTimer.click();
 
       tRoot
-        .w('❌ @PERMISSION %dms', ms)
+        .w('❌ (Permission) / %dms', ms)
         .w('• title = %o', this.title)
         .w('• err_code = %d', errCode)
         .w('• err_msg = %s', errMsg)

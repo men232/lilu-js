@@ -101,7 +101,7 @@ export class Rule {
       const ms = matchTimer.click();
 
       tRoot
-        .w('%s @RULE %dms ⍄ %o', result ? '✅' : '🔴', ms, this._title)
+        .w('%s (Rule) %s / %dms', result ? '✅' : '🔴', this._title, ms)
         .w('• MATCHED = %o', result);
 
       return {
@@ -117,7 +117,7 @@ export class Rule {
       const ms = matchTimer.click();
 
       tRoot
-        .w('❌ @RULE %d ms', ms)
+        .w('❌ (Rule) %d / ms', ms)
         .w('• title = %o', this._title)
         .w('• err_code = %d', errCode)
         .w('• err_msg =')
@@ -156,12 +156,13 @@ export class Rule {
       });
 
       tCond
-        .w('%s @CONDITION[%d]', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
-        .child().w('"%s" = "%o"', condition.raw, r.error
+        .w('%s (Condition #%d)', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
+        .child()
+        .table()
+        .label('"%s" = "%o"', condition.raw, r.error
           ? `err: ${r.errCode}`
           : r.result
         )
-      .child().table()
         .row()
           .cell('type')
           .cell('value')
