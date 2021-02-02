@@ -102,7 +102,6 @@ export class Rule {
 
       tRoot
         .w('%s @RULE %dms ⍄ %o', result ? '✅' : '🔴', ms, this._title)
-        // .w('• TITLE = %o', this._title)
         .w('• MATCHED = %o', result);
 
       return {
@@ -119,6 +118,7 @@ export class Rule {
 
       tRoot
         .w('❌ @RULE %d ms', ms)
+        .w('• title = %o', this._title)
         .w('• err_code = %d', errCode)
         .w('• err_msg =')
         .w('    - %s', errMsg.replace(/\n/g, '\n    - '));
@@ -157,21 +157,26 @@ export class Rule {
 
       tCond
         .w('%s @CONDITION[%d]', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
-        .table()
-        .label('EXPRESSION: "%s" = "%o"', condition.raw, r.result)
+        .child().w('"%s" = "%o"', condition.raw, r.error
+          ? `err: ${r.errCode}`
+          : r.result
+        )
+      .child().table()
         .row()
-          .cell('TYPE')
-          .cell('VALUE')
-          .cell('ENSURED')
+          .cell('type')
+          .cell('value')
+          .cell('ensured')
+        // .splitter()
         .row()
           .cell('@%s', r.stack.leftValue.type)
           .cell('"%s"', r.stack.leftValue.raw || '@missed_left')
-          .cell('"%o"', r.stack.leftValue.ensured)
+          .cell('= "%o"', r.stack.leftValue.ensured)
         .row()
           .cell('@%s', r.stack.rightValue.type)
           .cell('"%s"', r.stack.rightValue.raw || '@missed_right')
-          .cell('"%o"', r.stack.rightValue.ensured)
-        .tableWrite();
+          .cell('= "%o"', r.stack.rightValue.ensured)
+        .tableWrite()
+        .w('');
 
       if (r.error) {
         tCond

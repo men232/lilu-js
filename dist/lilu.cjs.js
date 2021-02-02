@@ -133,22 +133,21 @@ function textTable() {
 
   let MAX_LENGTH_PER_CELL = [];
   let MAX_LINES_PER_ROWS = [];
-  let MAP_IS_ROW_LABEL = [];
+  let MAP_ROW_TYPE = [];
   let MAX_CELL_AMOUNT = 0;
 
   const api = {
     row: createRow,
+    splitter: createSplitter,
+    hr: createHR,
     label: createLabel,
     tableWrite: complete
   };
 
   function complete() {
-    const isLabelFirst = !!MAP_IS_ROW_LABEL[0];
-    const isLabelLast = !!MAP_IS_ROW_LABEL[rows.length - 1];
-
     const maxLabelLength = Math.max(
       ...rows
-        .filter((v, idx) => !!MAP_IS_ROW_LABEL[idx])
+        .filter((v, idx) => MAP_ROW_TYPE[idx] === 'label')
         .map(row => Math.max(...row[0].map(v => v.length)))
     );
 
@@ -159,33 +158,31 @@ function textTable() {
       MAX_LENGTH_PER_CELL = MAX_LENGTH_PER_CELL.map(v => v + avgDiff);
     }
 
-    const start = '┌' + MAX_LENGTH_PER_CELL
-      .map(len => ''.padStart(len + 2, '─'))
-      .join(isLabelFirst ? '─' : '┬') + '┐\n';
-
-    const end = '\n└' + MAX_LENGTH_PER_CELL
-      .map(len => ''.padStart(len + 2, '─'))
-      .join(isLabelLast ? '─' : '┴') + '┘';
+    const cellSplitter = '     ';
 
     const result = ''
-      + start
       + rows.map((row, rowIdx) => {
-        const lines = [];
-        const isLabel = !!MAP_IS_ROW_LABEL[rowIdx];
-        const isNextLabel = !!MAP_IS_ROW_LABEL[rowIdx + 1];
+        const isLabel = MAP_ROW_TYPE[rowIdx] === 'label';
+        const isSplitter = MAP_ROW_TYPE[rowIdx] === 'splitter';
+        const isHR = MAP_ROW_TYPE[rowIdx] === 'hr';
         const isLastRow = rowIdx === (rows.length - 1);
 
-        const rowSplitter = '\n├' + MAX_LENGTH_PER_CELL
-          .map(len => ''.padStart(len + 2, '─'))
-          .join(
-            isLabel
-              ? (isLastRow || isNextLabel ? '─' : '┬')
-              : (isNextLabel ? '┴' : '┼')
-          ) + '┤\n';
+        const rowSplitter = isLastRow ? '' : '\n';
 
-        const cellSplitter = isLabel
-          ? '   '
-          : ' │ ';
+        if (isSplitter || isHR) {
+          const cells = [];
+          const cellSplitter = isSplitter ? '     ' : '-----';
+          const padSym = isHR ? '-' : ' ';
+
+          for (let cellIdx = 0; cellIdx < MAX_CELL_AMOUNT; cellIdx++) {
+            const padding = MAX_LENGTH_PER_CELL[cellIdx];
+            cells.push('--'.padEnd(padding, padSym));
+          }
+
+          return cells.join(cellSplitter) + rowSplitter;
+        }
+
+        const lines = [];
 
         for (let lineIdx = 0; lineIdx < MAX_LINES_PER_ROWS[rowIdx]; lineIdx++) {
           const cells = [];
@@ -196,22 +193,20 @@ function textTable() {
               : '';
 
             if (isLabel) {
-              const maxLen = MAX_LENGTH_PER_CELL.reduce((a, b) => a + b + 2, 0);
-              cells.push(coll.padEnd(maxLen, ' '));
+              const padding = MAX_LENGTH_PER_CELL.reduce((a, b) => a + b + 2, 0) + 1;
+              cells.push(coll.padEnd(padding, ' '));
               break;
             } else {
-              const maxLen = MAX_LENGTH_PER_CELL[cellIdx];
-              cells.push(coll.padEnd(maxLen, ' '));
+              const padding = MAX_LENGTH_PER_CELL[cellIdx];
+              cells.push(coll.padEnd(padding, ' '));
             }
           }
 
-          lines.push('│ ' + cells.join(cellSplitter) + ' │');
+          lines.push(cells.join(cellSplitter));
         }
 
-        return lines.join('\n') + (isLastRow ? '' : rowSplitter);
-      }).join('')
-      + end
-    ;
+        return lines.join('\n') + rowSplitter;
+      }).join('');
 
     return instance.w(result);
   }
@@ -222,12 +217,12 @@ function textTable() {
     const cellIdx = row.length;
 
     MAX_LENGTH_PER_CELL[cellIdx] = Math.max(
-      MAX_LENGTH_PER_CELL[cellIdx] || 0,
+      MAX_LENGTH_PER_CELL[cellIdx] || 4,
       ...lines.map(v => v.length)
     );
 
     MAX_LINES_PER_ROWS[rowIdx] = Math.max(
-      MAX_LINES_PER_ROWS[rowIdx] || 0,
+      MAX_LINES_PER_ROWS[rowIdx] || 1,
       lines.length
     );
 
@@ -250,6 +245,18 @@ function textTable() {
     }
   }
 
+  function createSplitter() {
+    createRow();
+    MAP_ROW_TYPE[rows.length - 1] = 'splitter';
+    return api;
+  }
+
+  function createHR() {
+    createRow();
+    MAP_ROW_TYPE[rows.length - 1] = 'hr';
+    return api;
+  }
+
   function createLabel(fmt, ...args) {
     createRow();
     const rowIdx = rows.length - 1;
@@ -257,7 +264,7 @@ function textTable() {
       const cellLength = MAX_LENGTH_PER_CELL[0] || 0;
       createCell(rowIdx, fmt || '', ...args);
       MAX_LENGTH_PER_CELL[0] = cellLength;
-      MAP_IS_ROW_LABEL[rowIdx] = true;
+      MAP_ROW_TYPE[rowIdx] = 'label';
 
     return api;
   }
@@ -565,9 +572,8 @@ class Expression {
             stack.rightValue.ensured = this._ensureValue(right, context);
             stack.operator = operator.value;
             const operatorFn = this._operators[operator.value];
-            if (typeof operatorFn !== 'function') {
+            if (typeof operatorFn !== 'function')
                 throw new LiluExpressionEvalError(`Attempt to eval with unknown operator: ${operator.value}`, this._raw, context, 2);
-            }
             const result = operatorFn(stack.leftValue.ensured, stack.rightValue.ensured);
             d('%s %s %s RESULT = %s\n    BY VALUES:\n      "%s" = %o\n      "%s" = %o', stack.leftValue.raw, stack.operator, stack.rightValue.raw, result, stack.leftValue.raw, stack.leftValue.ensured, stack.rightValue.raw, stack.rightValue.ensured);
             return complete(result);
@@ -733,7 +739,6 @@ class Rule {
             const ms = matchTimer.click();
             tRoot
                 .w('%s @RULE %dms ⍄ %o', result ? '✅' : '🔴', ms, this._title)
-                // .w('• TITLE = %o', this._title)
                 .w('• MATCHED = %o', result);
             return {
                 result,
@@ -747,6 +752,7 @@ class Rule {
             const ms = matchTimer.click();
             tRoot
                 .w('❌ @RULE %d ms', ms)
+                .w('• title = %o', this._title)
                 .w('• err_code = %d', errCode)
                 .w('• err_msg =')
                 .w('    - %s', errMsg.replace(/\n/g, '\n    - '));
@@ -778,21 +784,25 @@ class Rule {
             });
             tCond
                 .w('%s @CONDITION[%d]', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
-                .table()
-                .label('EXPRESSION: "%s" = "%o"', condition.raw, r.result)
+                .child().w('"%s" = "%o"', condition.raw, r.error
+                ? `err: ${r.errCode}`
+                : r.result)
+                .child().table()
                 .row()
-                .cell('TYPE')
-                .cell('VALUE')
-                .cell('ENSURED')
+                .cell('type')
+                .cell('value')
+                .cell('ensured')
+                // .splitter()
                 .row()
                 .cell('@%s', r.stack.leftValue.type)
                 .cell('"%s"', r.stack.leftValue.raw || '@missed_left')
-                .cell('"%o"', r.stack.leftValue.ensured)
+                .cell('= "%o"', r.stack.leftValue.ensured)
                 .row()
                 .cell('@%s', r.stack.rightValue.type)
                 .cell('"%s"', r.stack.rightValue.raw || '@missed_right')
-                .cell('"%o"', r.stack.rightValue.ensured)
-                .tableWrite();
+                .cell('= "%o"', r.stack.rightValue.ensured)
+                .tableWrite()
+                .w('');
             if (r.error) {
                 tCond
                     .w('• ERROR:')
@@ -869,8 +879,7 @@ class Permission {
             const ms = startTimer.click();
             const symPrefix = result ? '✅' : '🔴';
             tRoot
-                .w(`%s @PERMISSION %dms ⍄ %o`, symPrefix, ms, this._title)
-                // .w('• TITLE = %o', this.title)
+                .w('%s @PERMISSION %dms ⍄ %o', symPrefix, ms, this._title)
                 .w('• PASSED = %o', result);
             return {
                 error: false,

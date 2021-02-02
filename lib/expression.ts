@@ -282,14 +282,12 @@ export class Expression {
 
       const operatorFn = this._operators[operator.value];
 
-      if (typeof operatorFn !== 'function') {
-        throw new LiluExpressionEvalError(
-          `Attempt to eval with unknown operator: ${operator.value}`,
-          this._raw,
-          context,
-          2
-        );
-      }
+      if (typeof operatorFn !== 'function') throw new LiluExpressionEvalError(
+        `Attempt to eval with unknown operator: ${operator.value}`,
+        this._raw,
+        context,
+        2
+      );
 
       const result: boolean = operatorFn(
         stack.leftValue.ensured,

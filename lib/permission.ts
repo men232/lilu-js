@@ -106,8 +106,7 @@ export class Permission {
       const symPrefix = result ? '✅' : '🔴';
 
       tRoot
-        .w(`%s @PERMISSION %dms ⍄ %o`, symPrefix, ms, this._title)
-        // .w('• TITLE = %o', this.title)
+        .w('%s @PERMISSION %dms ⍄ %o', symPrefix, ms, this._title)
         .w('• PASSED = %o', result);
 
       return {
