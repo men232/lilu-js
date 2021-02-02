@@ -323,14 +323,12 @@ export class Lilu {
 
         if (isTimeoutError) isTimeout = true;
 
-        tChild.w(
-          '%s[%o]\n• err_code = %d\n• err_msg = %s\n• context = %s',
-          isTimeoutError ? '⏰ @PERMISSION' : '❌❌❌ @PERMISSION',
-          permission.title,
-          errCode,
-          errMsg,
-          JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  ')
-        );
+        tChild
+          .w(isTimeoutError ? '⏰ @PERMISSION' : '❌❌❌ @PERMISSION')
+          .w('• title = %s', permission.title)
+          .w('• err_code = %d', errCode)
+          .w('• err_msg = %s', errMsg)
+          .w('• context = %s', JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  '));
 
         if (isCriticalError) {
           throw new LiluGrantedError(

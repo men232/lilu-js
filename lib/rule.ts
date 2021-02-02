@@ -28,7 +28,7 @@ export interface RuleMatchResult {
   errCode?: number;
   errMsg?: string;
   ms: number;
-  __t: object
+  __t: object;
 }
 
 export interface RuleJSON {
@@ -95,38 +95,33 @@ export class Rule {
   match(context: EvalContext): RuleMatchResult {
     const trace: Array<TraceCondition> = [];
     const tRoot = tbag();
-    const tCond = tRoot.child();
     const matchTimer = timer();
 
     const complete = (result: boolean): RuleMatchResult => {
       const ms = matchTimer.click();
 
-      tRoot.w('%s @RULE[%o] %d ms\n• MATCHED = %o',
-        result ? '✅' : '🔴',
-        this.title,
-        ms,
-        result
-      );
+      tRoot
+        .w('%s @RULE %dms ⍄ %o', result ? '✅' : '🔴', ms, this._title)
+        // .w('• TITLE = %o', this._title)
+        .w('• MATCHED = %o', result);
 
       return {
         result,
         trace,
         error: false,
         ms,
-        __t: tRoot
+        __t: tRoot,
       };
     };
 
     const fail = (errCode: number, errMsg: string): RuleMatchResult => {
       const ms = matchTimer.click();
 
-      tRoot.w(
-        '❌ @RULE[%o] %d ms\n• err_code = %d\n• err_msg =\n    - %s',
-        this.title,
-        ms,
-        errCode,
-        errMsg.replace(/\n/g, '\n    - '),
-      );
+      tRoot
+        .w('❌ @RULE %d ms', ms)
+        .w('• err_code = %d', errCode)
+        .w('• err_msg =')
+        .w('    - %s', errMsg.replace(/\n/g, '\n    - '));
 
       return {
         error: true,
@@ -134,7 +129,7 @@ export class Rule {
         errCode,
         trace,
         ms,
-        __t: tRoot
+        __t: tRoot,
       };
     };
 
@@ -144,11 +139,14 @@ export class Rule {
     let lastErrMsg = '';
     let isMatched: boolean;
 
+    let n = 1;
+
     const conditionRun = (condition: Expression) => {
       if (isError) return false;
 
       lastCondition = condition;
 
+      const tCond = tRoot.child();
       const r = condition.eval(context);
 
       trace.push({
@@ -157,39 +155,30 @@ export class Rule {
         result: r,
       });
 
-      const symPrefix = r.error
-        ? '❌'
-        : r.result ? '✅' : '🔴';
+      tCond
+        .w('%s @CONDITION[%d]', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
+        .table()
+        .label('EXPRESSION: "%s" = "%o"', condition.raw, r.result)
+        .row()
+          .cell('TYPE')
+          .cell('VALUE')
+          .cell('ENSURED')
+        .row()
+          .cell('@%s', r.stack.leftValue.type)
+          .cell('"%s"', r.stack.leftValue.raw || '@missed_left')
+          .cell('"%o"', r.stack.leftValue.ensured)
+        .row()
+          .cell('@%s', r.stack.rightValue.type)
+          .cell('"%s"', r.stack.rightValue.raw || '@missed_right')
+          .cell('"%o"', r.stack.rightValue.ensured)
+        .tableWrite();
 
-      const padVarType = Math.max(
-        r.stack.leftValue.type.length,
-        r.stack.rightValue.type.length,
-      ) + 3;
-
-      const padVarRaw = Math.max(
-        String(r.stack.leftValue.raw).length,
-        String(r.stack.rightValue.raw).length,
-      ) + 3;
-
-      const varHeader = `${'type '.padEnd(padVarType + 2, '─')}${'value '.padEnd(padVarRaw + 2, '─')} ensured`;
-
-      tCond.w(
-        `${symPrefix} @CONDITION\nƒ %s = %o\n• BY VALUES:\n└── ${varHeader}\n  • @%s %s = %o\n  • @%s %s = %o${
-          r.error
-            ? '\n• ERROR:\n  • err_code = %d\n  • err_msg = %s'
-            : ''
-        }\n`,
-        condition.raw,
-        r.result,
-        r.stack.leftValue.type.padEnd(padVarType, ' '),
-        (r.stack.leftValue.raw || '@missed_left').padEnd(padVarRaw, ' '),
-        r.stack.leftValue.ensured,
-        r.stack.rightValue.type.padEnd(padVarType, ' '),
-        (r.stack.rightValue.raw || '@missed_right').padEnd(padVarRaw, ' '),
-        r.stack.rightValue.ensured,
-        r.errCode,
-        r.errMsg,
-      );
+      if (r.error) {
+        tCond
+          .w('• ERROR:')
+          .w('  • err_code = %d', r.errCode)
+          .w('  • err_msg = %s', r.errMsg)
+      }
 
       if (r.error) {
         isError = true;
@@ -207,7 +196,10 @@ export class Rule {
     }
 
     if (isError) {
-      return fail(lastErrCode, `condition[${lastCondition.raw}].eval()\n${lastErrMsg || '@missed'}`);
+      return fail(
+        lastErrCode,
+        `condition[${lastCondition.raw}].eval()\n${lastErrMsg || '@missed'}`,
+      );
     }
 
     return complete(isMatched);

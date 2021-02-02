@@ -127,7 +127,7 @@ export class Expression {
     return 'LiLuExpression';
   }
 
-  get strict() {
+  get strict(): boolean {
     return this._strict;
   }
 

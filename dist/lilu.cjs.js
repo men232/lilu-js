@@ -127,6 +127,144 @@ function format(fmt, ...args) {
   return '' + fmt;
 }
 
+function textTable() {
+  const rows = [];
+  const instance = this;
+
+  let MAX_LENGTH_PER_CELL = [];
+  let MAX_LINES_PER_ROWS = [];
+  let MAP_IS_ROW_LABEL = [];
+  let MAX_CELL_AMOUNT = 0;
+
+  const api = {
+    row: createRow,
+    label: createLabel,
+    tableWrite: complete
+  };
+
+  function complete() {
+    const isLabelFirst = !!MAP_IS_ROW_LABEL[0];
+    const isLabelLast = !!MAP_IS_ROW_LABEL[rows.length - 1];
+
+    const maxLabelLength = Math.max(
+      ...rows
+        .filter((v, idx) => !!MAP_IS_ROW_LABEL[idx])
+        .map(row => Math.max(...row[0].map(v => v.length)))
+    );
+
+    const maxRowLength = MAX_LENGTH_PER_CELL.reduce((a, b) => a + b, 0);
+
+    if (maxLabelLength > maxRowLength) {
+      const avgDiff = Math.round((maxLabelLength - maxRowLength) / MAX_CELL_AMOUNT);
+      MAX_LENGTH_PER_CELL = MAX_LENGTH_PER_CELL.map(v => v + avgDiff);
+    }
+
+    const start = '┌' + MAX_LENGTH_PER_CELL
+      .map(len => ''.padStart(len + 2, '─'))
+      .join(isLabelFirst ? '─' : '┬') + '┐\n';
+
+    const end = '\n└' + MAX_LENGTH_PER_CELL
+      .map(len => ''.padStart(len + 2, '─'))
+      .join(isLabelLast ? '─' : '┴') + '┘';
+
+    const result = ''
+      + start
+      + rows.map((row, rowIdx) => {
+        const lines = [];
+        const isLabel = !!MAP_IS_ROW_LABEL[rowIdx];
+        const isNextLabel = !!MAP_IS_ROW_LABEL[rowIdx + 1];
+        const isLastRow = rowIdx === (rows.length - 1);
+
+        const rowSplitter = '\n├' + MAX_LENGTH_PER_CELL
+          .map(len => ''.padStart(len + 2, '─'))
+          .join(
+            isLabel
+              ? (isLastRow || isNextLabel ? '─' : '┬')
+              : (isNextLabel ? '┴' : '┼')
+          ) + '┤\n';
+
+        const cellSplitter = isLabel
+          ? '   '
+          : ' │ ';
+
+        for (let lineIdx = 0; lineIdx < MAX_LINES_PER_ROWS[rowIdx]; lineIdx++) {
+          const cells = [];
+
+          for (let cellIdx = 0; cellIdx < MAX_CELL_AMOUNT; cellIdx++) {
+            const coll = row[cellIdx]
+              ? (row[cellIdx][lineIdx] ? row[cellIdx][lineIdx] : '')
+              : '';
+
+            if (isLabel) {
+              const maxLen = MAX_LENGTH_PER_CELL.reduce((a, b) => a + b + 2, 0);
+              cells.push(coll.padEnd(maxLen, ' '));
+              break;
+            } else {
+              const maxLen = MAX_LENGTH_PER_CELL[cellIdx];
+              cells.push(coll.padEnd(maxLen, ' '));
+            }
+          }
+
+          lines.push('│ ' + cells.join(cellSplitter) + ' │');
+        }
+
+        return lines.join('\n') + (isLastRow ? '' : rowSplitter);
+      }).join('')
+      + end
+    ;
+
+    return instance.w(result);
+  }
+
+  function createCell(rowIdx, fmt, ...args) {
+    const row = rows[rowIdx];
+    const lines = format(String(fmt), ...args).split('\n');
+    const cellIdx = row.length;
+
+    MAX_LENGTH_PER_CELL[cellIdx] = Math.max(
+      MAX_LENGTH_PER_CELL[cellIdx] || 0,
+      ...lines.map(v => v.length)
+    );
+
+    MAX_LINES_PER_ROWS[rowIdx] = Math.max(
+      MAX_LINES_PER_ROWS[rowIdx] || 0,
+      lines.length
+    );
+
+    MAX_CELL_AMOUNT = Math.max(MAX_CELL_AMOUNT, cellIdx + 1);
+    row.push(lines);
+
+    return {
+      ...api,
+      cell: createCell.bind(null, rowIdx)
+    }
+  }
+
+  function createRow() {
+    const row = [];
+    const rowIdx = rows.push(row) - 1;
+
+    return {
+      ...api,
+      cell: createCell.bind(null, rowIdx)
+    }
+  }
+
+  function createLabel(fmt, ...args) {
+    createRow();
+    const rowIdx = rows.length - 1;
+
+      const cellLength = MAX_LENGTH_PER_CELL[0] || 0;
+      createCell(rowIdx, fmt || '', ...args);
+      MAX_LENGTH_PER_CELL[0] = cellLength;
+      MAP_IS_ROW_LABEL[rowIdx] = true;
+
+    return api;
+  }
+
+  return api;
+}
+
 const chr = function(s) {
   return s;
 };
@@ -143,7 +281,9 @@ function createTBag() {
       return collect({ lines, childs }, prefix);
     }
 
-    const splitter = '\n' + prefix + (childs.length ? chr('│') : ' ') + ' ';
+    const splitter = prefix
+      ? '\n' + prefix + (childs.length ? chr('│') : ' ') + ' '
+      : '\n';
 
     return prefix
       + lines.join(splitter) + '\n'
@@ -169,6 +309,7 @@ function createTBag() {
       lines.push(...line.split('\n'));
       return this;
     },
+    table: textTable,
     a(...args) {
       const line = format(...args);
       lines.unshift(...line.split('\n'));
@@ -197,29 +338,35 @@ function createTBag() {
 }
 
 /*
-  const t = createTBag();
+const t = createTBag();
 
-  console.log(
-  t
-    .w('line 1')
-    .w('line 2')
-    .w('line 3')
-    .w('line 4')
-    .child()
-    .w('line 1.1 with\n * some 1\n * some 2')
-    .w('line 1.2')
-    .w('line 1.3')
-    .w('line 1.4')
-    .child()
-    .w('line 2.1')
-    .w('line 2.2')
-    .w('line 2.3')
-    .w('line 2.4')
-    .collect()
-  );
-  console.log('-----');
-  console.log(t.collect())
- */
+console.log(
+t
+  .table()
+  .row()
+    .cell('header 1')
+    .cell('header 2')
+    .cell('header 3')
+  .row()
+    .cell('cell 1\ntest')
+    .cell('cell 2')
+    .cell('cell 3 qewr q,lw;r qlwr m;qwlrm lqr; qwlr q;lwrm')
+  .row()
+    .cell('cell 1')
+    .cell('cell 2')
+    .cell('cell 3')
+  .tableWrite()
+  .child()
+  .w('test 1')
+  .w('test 2')
+  .w('test 3')
+  .child()
+  .w('test 2.1')
+  .w('test 2.2')
+  .w('test 2.3')
+  .collect()
+);
+*/
 
 function promiseOrCallback(callback, fn) {
   if (typeof callback === 'function') {
@@ -581,29 +728,35 @@ class Rule {
     match(context) {
         const trace = [];
         const tRoot = createTBag();
-        const tCond = tRoot.child();
         const matchTimer = timer();
         const complete = (result) => {
             const ms = matchTimer.click();
-            tRoot.w('%s @RULE[%o] %d ms\n• MATCHED = %o', result ? '✅' : '🔴', this.title, ms, result);
+            tRoot
+                .w('%s @RULE %dms ⍄ %o', result ? '✅' : '🔴', ms, this._title)
+                // .w('• TITLE = %o', this._title)
+                .w('• MATCHED = %o', result);
             return {
                 result,
                 trace,
                 error: false,
                 ms,
-                __t: tRoot
+                __t: tRoot,
             };
         };
         const fail = (errCode, errMsg) => {
             const ms = matchTimer.click();
-            tRoot.w('❌ @RULE[%o] %d ms\n• err_code = %d\n• err_msg =\n    - %s', this.title, ms, errCode, errMsg.replace(/\n/g, '\n    - '));
+            tRoot
+                .w('❌ @RULE %d ms', ms)
+                .w('• err_code = %d', errCode)
+                .w('• err_msg =')
+                .w('    - %s', errMsg.replace(/\n/g, '\n    - '));
             return {
                 error: true,
                 errMsg,
                 errCode,
                 trace,
                 ms,
-                __t: tRoot
+                __t: tRoot,
             };
         };
         let lastCondition = this._conditions[0];
@@ -611,25 +764,41 @@ class Rule {
         let lastErrCode = -1;
         let lastErrMsg = '';
         let isMatched;
+        let n = 1;
         const conditionRun = (condition) => {
             if (isError)
                 return false;
             lastCondition = condition;
+            const tCond = tRoot.child();
             const r = condition.eval(context);
             trace.push({
                 type: 'condition',
                 item: condition.toJSON(),
                 result: r,
             });
-            const symPrefix = r.error
-                ? '❌'
-                : r.result ? '✅' : '🔴';
-            const padVarType = Math.max(r.stack.leftValue.type.length, r.stack.rightValue.type.length) + 3;
-            const padVarRaw = Math.max(String(r.stack.leftValue.raw).length, String(r.stack.rightValue.raw).length) + 3;
-            const varHeader = `${'type '.padEnd(padVarType + 2, '─')}${'value '.padEnd(padVarRaw + 2, '─')} ensured`;
-            tCond.w(`${symPrefix} @CONDITION\nƒ %s = %o\n• BY VALUES:\n└── ${varHeader}\n  • @%s %s = %o\n  • @%s %s = %o${r.error
-                ? '\n• ERROR:\n  • err_code = %d\n  • err_msg = %s'
-                : ''}\n`, condition.raw, r.result, r.stack.leftValue.type.padEnd(padVarType, ' '), (r.stack.leftValue.raw || '@missed_left').padEnd(padVarRaw, ' '), r.stack.leftValue.ensured, r.stack.rightValue.type.padEnd(padVarType, ' '), (r.stack.rightValue.raw || '@missed_right').padEnd(padVarRaw, ' '), r.stack.rightValue.ensured, r.errCode, r.errMsg);
+            tCond
+                .w('%s @CONDITION[%d]', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
+                .table()
+                .label('EXPRESSION: "%s" = "%o"', condition.raw, r.result)
+                .row()
+                .cell('TYPE')
+                .cell('VALUE')
+                .cell('ENSURED')
+                .row()
+                .cell('@%s', r.stack.leftValue.type)
+                .cell('"%s"', r.stack.leftValue.raw || '@missed_left')
+                .cell('"%o"', r.stack.leftValue.ensured)
+                .row()
+                .cell('@%s', r.stack.rightValue.type)
+                .cell('"%s"', r.stack.rightValue.raw || '@missed_right')
+                .cell('"%o"', r.stack.rightValue.ensured)
+                .tableWrite();
+            if (r.error) {
+                tCond
+                    .w('• ERROR:')
+                    .w('  • err_code = %d', r.errCode)
+                    .w('  • err_msg = %s', r.errMsg);
+            }
             if (r.error) {
                 isError = true;
                 lastErrCode = r.errCode || -1;
@@ -699,7 +868,10 @@ class Permission {
         const complete = (result) => {
             const ms = startTimer.click();
             const symPrefix = result ? '✅' : '🔴';
-            tRoot.w(`${symPrefix} @PERMISSION[%o] %d ms\n• PASSED = %o`, this.title, ms, result);
+            tRoot
+                .w(`%s @PERMISSION %dms ⍄ %o`, symPrefix, ms, this._title)
+                // .w('• TITLE = %o', this.title)
+                .w('• PASSED = %o', result);
             return {
                 error: false,
                 result,
@@ -710,7 +882,12 @@ class Permission {
         };
         const fail = (errCode, errMsg) => {
             const ms = startTimer.click();
-            tRoot.w('❌ @PERMISSION[%o] %d ms\n• err_code = %d\n• err_msg = %s\n• context = %s', this.title, ms, errCode, errMsg, JSON.stringify(context, null, 2).replace(/\n/g, '\n  '));
+            tRoot
+                .w('❌ @PERMISSION %dms', ms)
+                .w('• title = %o', this.title)
+                .w('• err_code = %d', errCode)
+                .w('• err_msg = %s', errMsg)
+                .w('• context = %s', JSON.stringify(context, null, 2).replace(/\n/g, '\n  '));
             return {
                 error: true,
                 errCode,
@@ -1015,7 +1192,12 @@ class Lilu {
                 const isCriticalError = !isTimeoutError && errCode === -1;
                 if (isTimeoutError)
                     isTimeout = true;
-                tChild.w('%s[%o]\n• err_code = %d\n• err_msg = %s\n• context = %s', isTimeoutError ? '⏰ @PERMISSION' : '❌❌❌ @PERMISSION', permission.title, errCode, errMsg, JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  '));
+                tChild
+                    .w(isTimeoutError ? '⏰ @PERMISSION' : '❌❌❌ @PERMISSION')
+                    .w('• title = %s', permission.title)
+                    .w('• err_code = %d', errCode)
+                    .w('• err_msg = %s', errMsg)
+                    .w('• context = %s', JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  '));
                 if (isCriticalError) {
                     throw new LiluGrantedError(errCode, errMsg, trace, tRoot.collect(), err);
                 }

@@ -105,7 +105,10 @@ export class Permission {
       const ms = startTimer.click();
       const symPrefix = result ? '✅' : '🔴';
 
-      tRoot.w(`${symPrefix} @PERMISSION[%o] %d ms\n• PASSED = %o`, this.title, ms, result);
+      tRoot
+        .w(`%s @PERMISSION %dms ⍄ %o`, symPrefix, ms, this._title)
+        // .w('• TITLE = %o', this.title)
+        .w('• PASSED = %o', result);
 
       return {
         error: false,
@@ -119,14 +122,12 @@ export class Permission {
     const fail = (errCode: number, errMsg: string): PermissionMatchResult => {
       const ms = startTimer.click();
 
-      tRoot.w(
-        '❌ @PERMISSION[%o] %d ms\n• err_code = %d\n• err_msg = %s\n• context = %s',
-        this.title,
-        ms,
-        errCode,
-        errMsg,
-        JSON.stringify(context, null, 2).replace(/\n/g, '\n  ')
-      );
+      tRoot
+        .w('❌ @PERMISSION %dms', ms)
+        .w('• title = %o', this.title)
+        .w('• err_code = %d', errCode)
+        .w('• err_msg = %s', errMsg)
+        .w('• context = %s', JSON.stringify(context, null, 2).replace(/\n/g, '\n  '));
 
       return {
         error: true,
