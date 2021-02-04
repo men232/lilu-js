@@ -3,6 +3,7 @@
     "outDir": "./dist",
     "moduleResolution": "node",
     "declaration": true,
+    "declarationDir": "dist/types",
     "esModuleInterop": true,
     "target": "es2015",
 
@@ -23,5 +24,5 @@
   },
   "include": ["lib/**/*"],
   "exclude": ["node_modules", "dist", "src", "**/*.test.ts"],
-  "lib": ["es2015"]
+  "lib": ["es6", "dom"]
 }

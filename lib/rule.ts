@@ -171,11 +171,11 @@ export class Rule {
         .row()
           .cell('@%s', r.stack.leftValue.type)
           .cell('"%s"', r.stack.leftValue.raw || '@missed_left')
-          .cell('= "%o"', r.stack.leftValue.ensured)
+          .cell('= %o', r.stack.leftValue.ensured)
         .row()
           .cell('@%s', r.stack.rightValue.type)
           .cell('"%s"', r.stack.rightValue.raw || '@missed_right')
-          .cell('= "%o"', r.stack.rightValue.ensured)
+          .cell('= %o', r.stack.rightValue.ensured)
         .tableWrite()
         .w('');
 

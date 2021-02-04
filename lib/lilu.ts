@@ -2,6 +2,7 @@ import debug from 'debug';
 import globToRegExp from 'glob-to-regexp';
 
 import * as obj from './utils/object';
+import * as array from './utils/array';
 import timer from './utils/timer';
 import tbag from './utils/tbag';
 import promiseOrCallback from './utils/promiseOrCallback';
@@ -48,7 +49,7 @@ interface GrantedResultError {
 
 interface GrantedTrace {
   toString: () => string;
-  toJSON: () => Array<object>;
+  toJSON: () => Array<TracePermission>;
 }
 
 interface GrantedResult {
@@ -58,6 +59,24 @@ interface GrantedResult {
   nErrors: number;
   permission: PermissionJSON | null;
   mismatched: Array<PermissionJSON>;
+  ms: number;
+  trace: GrantedTrace;
+  __t: object;
+}
+
+interface GrantedManyResult {
+  actions: {
+    allow: Array<string>,
+    disallow: Array<string>
+  },
+  permissions: {
+    matched: Array<PermissionJSON>,
+    mismatched: Array<PermissionJSON>
+  },
+  passed: boolean;
+  timeout: boolean;
+  errors: Array<GrantedResultError>;
+  nErrors: number;
   ms: number;
   trace: GrantedTrace;
   __t: object;
@@ -349,5 +368,90 @@ export class Lilu {
     }
 
     return complete();
+  }
+
+  async _grantedMany(
+    actions: Array<string>,
+    options: GrantedOptions
+  ): Promise<GrantedManyResult> {
+    options = options || {};
+
+    const matched: Array<PermissionJSON> = [];
+    const mismatched: Array<PermissionJSON> = [];
+    const trace: Array<TracePermission> = [];
+    const tRoot = tbag();
+
+    let errors: Array<GrantedResultError> = [];
+    let unprocessedActions = [...actions];
+    let isTimeout = false;
+
+    const startTimer = timer();
+
+    while(unprocessedActions.length > 0) {
+      const actionName = unprocessedActions.pop();
+
+      if (!actionName) break;
+
+      const opts = { ...options };
+
+      if (typeof opts.timeout === 'number' && opts.timeout > 0) {
+        opts.timeout -= startTimer.click();
+
+        if (opts.timeout <= 0) {
+          isTimeout = true;
+          break;
+        }
+      }
+
+      let result = await this._granted(actionName, opts);
+
+      isTimeout = result.timeout;
+
+      tRoot.attach(result.__t)
+      trace.push(...result.trace.toJSON());
+      errors.push(...result.errors);
+
+      if (result.passed && result.permission) {
+        // take all actions from permission and exclude from processing list
+        unprocessedActions
+          = array.pull(unprocessedActions, result.permission.actions);
+
+        matched.push(result.permission);
+      } else {
+        mismatched.push(...result.mismatched);
+      }
+    }
+
+    const ms = startTimer.click();
+
+    const allow = array.pull(actions, unprocessedActions);
+    const disallow = [...unprocessedActions];
+    const passed = actions.length === allow.length && !disallow.length;
+
+    tRoot
+      .w('%s (Granted Many) / %d ms', passed ? '✅' : '🔴', ms)
+      .w('• ALLOW = %s', allow.join('\n        - ') || 'N/A')
+      .w('• DISALLOW = %s', disallow.join('\n           - ') || 'N/A')
+      .w('• MATCHED = %s', matched.map(v => v.title).join('\n          - ') || 'N/A')
+      .w('• MISMATCHED = %s', mismatched.map(v => v.title).join('\n             - ') || 'N/A');
+
+    if (errors.length) {
+      tRoot.w('• ERRORS = %d', errors.length);
+    }
+
+    return {
+      actions: { allow, disallow },
+      permissions: { matched, mismatched },
+      passed: passed,
+      timeout: isTimeout,
+      errors,
+      nErrors: errors.length,
+      ms,
+      trace: {
+        toString: () => tRoot.collect(),
+        toJSON: () => obj.clone(trace),
+      },
+      __t: tRoot,
+    }
   }
 }

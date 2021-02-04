@@ -1,0 +1,28 @@
+{
+  "presets": [
+    ["@babel/env", {
+      "corejs": 3,
+      "useBuiltIns": "usage",
+      "targets": {
+       "browsers": [
+         "Chrome >= 46",
+         "Firefox >= 45",
+         "Safari >= 10",
+         "Edge >= 13",
+         "iOS >= 10",
+         "Electron >= 0.36"
+       ]
+      }
+    }],
+    "@babel/typescript"
+  ],
+  "plugins": [
+    "@babel/proposal-class-properties",
+    "@babel/proposal-object-rest-spread",
+    ["@babel/plugin-transform-runtime", {
+      "regenerator": false,
+      "corejs": false,
+      "helpers": true
+    }]
+  ]
+}

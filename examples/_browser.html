@@ -66,12 +66,7 @@
     permissions: permissions
   });
 
-  lilu.granted('order.view', { order }, function(err, result) {
-    if (err) {
-      console.warn('Failed to process lilu access', err);
-      return;
-    }
-
+  lilu._grantedMany(['order.view', 'order.create'], { context: { order } }).then(function(result) {
     console.log(result.__t);
     console.log(result.trace.toString());
 
