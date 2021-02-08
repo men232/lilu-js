@@ -67,7 +67,7 @@
   });
 
   lilu._grantedMany(['order.view', 'order.create'], { context: { order } }).then(function(result) {
-    console.log(result.__t);
+    console.log(result.trace.toJSON());
     console.log(result.trace.toString());
 
     if (result.passed) {

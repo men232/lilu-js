@@ -34,7 +34,7 @@ export interface TraceRule extends TraceBase {
   result: RuleMatchResult;
 }
 
-export interface PermissionMatchResult {
+export interface PermissionCheckResult {
   trace: Array<TraceRule>;
   error: boolean;
   result?: boolean;
@@ -96,12 +96,12 @@ export class Permission {
     return obj.clone(this._attributes);
   }
 
-  check(context: EvalContext): PermissionMatchResult {
+  check(context: EvalContext): PermissionCheckResult {
     const tRoot = tbag();
     const trace: Array<TraceRule> = [];
     const startTimer = timer();
 
-    const complete = (result: boolean): PermissionMatchResult => {
+    const complete = (result: boolean): PermissionCheckResult => {
       const ms = startTimer.click();
       const symPrefix = result ? '✅' : '🔴';
 
@@ -118,7 +118,7 @@ export class Permission {
       };
     };
 
-    const fail = (errCode: number, errMsg: string): PermissionMatchResult => {
+    const fail = (errCode: number, errMsg: string): PermissionCheckResult => {
       const ms = startTimer.click();
 
       tRoot

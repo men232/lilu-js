@@ -2,7 +2,6 @@ import debug from 'debug';
 import globToRegExp from 'glob-to-regexp';
 
 import * as obj from './utils/object';
-import * as array from './utils/array';
 import timer from './utils/timer';
 import tbag from './utils/tbag';
 import promiseOrCallback from './utils/promiseOrCallback';
@@ -11,7 +10,7 @@ import { DEFAULT_OPERATORS, OperatorMap } from './operators';
 import {
   Permission,
   PermissionJSON,
-  PermissionMatchResult,
+  PermissionCheckResult,
   PermissionOptions,
 } from './permission';
 import { TraceBase } from './trace';
@@ -36,23 +35,23 @@ export interface LiluOptions {
   permissions: Array<Partial<PermissionOptions>>;
 }
 
-interface GrantedOptions {
+export interface GrantedOptions {
   enviroment: LiluEnviroment;
   timeout: number | false;
   context: EvalContext;
 }
 
-interface GrantedResultError {
+export interface GrantedResultError {
   errCode: number;
   errMsg: string;
 }
 
-interface GrantedTrace {
+export interface GrantedTrace {
   toString: () => string;
   toJSON: () => Array<TracePermission>;
 }
 
-interface GrantedResult {
+export interface GrantedResult {
   passed: boolean;
   timeout: boolean;
   errors: Array<GrantedResultError>;
@@ -64,7 +63,7 @@ interface GrantedResult {
   __t: object;
 }
 
-interface GrantedManyResult {
+export interface GrantedManyResult {
   actions: {
     allow: Array<string>,
     disallow: Array<string>
@@ -82,12 +81,16 @@ interface GrantedManyResult {
   __t: object;
 }
 
-type GrantedCallback = (err: Error, passed: boolean) => void;
+export interface CheckPermissionResult extends PermissionCheckResult {
+  timeout: boolean;
+}
+
+export type GrantedCallback = (err: Error, passed: boolean) => void;
 
 export interface TracePermission extends TraceBase {
   type: 'permission';
   item: PermissionJSON;
-  result: PermissionMatchResult;
+  result: PermissionCheckResult;
 }
 
 export class Lilu {
@@ -233,12 +236,10 @@ export class Lilu {
     const mismatched: Array<PermissionJSON> = [];
     const trace: Array<TracePermission> = [];
     const tRoot = tbag();
-    const tChild = tRoot.child();
 
     let isTimeout = false;
 
     const startTimer = timer();
-
     const permissionsList = this._permissionsByActionMap.get(actionName) || [];
 
     const complete = (permission?: Permission): GrantedResult => {
@@ -261,43 +262,20 @@ export class Lilu {
       };
     };
 
-    const wholeContext: EvalContext = obj.clone(context);
-
-    const ensurePermissionVariables = async (permission: Permission) => {
-      for (const variableName of permission.ruleVariables) {
-        const contextValue = obj.get(wholeContext, variableName);
-
-        if (contextValue !== undefined) {
-          continue;
-        }
-
-        let enviromentValue = obj.get(enviroment, variableName);
-
-        if (typeof enviromentValue === 'function') {
-          try {
-            enviromentValue = await enviromentValue.call(enviroment);
-          } catch (err) {
-            enviromentValue = err;
-            // TO-DO: Log error into tbag
-          }
-        }
-
-        if (enviromentValue !== undefined) {
-          obj.set(wholeContext, variableName, enviromentValue);
-        }
-      }
-    };
-
     const handlePermission = async (
       permission: Permission,
     ): Promise<boolean> => {
-      await ensurePermissionVariables(permission);
-
-      const r = permission.check(wholeContext);
+      const r = await this._checkPermission(permission, {
+        timeout: (typeof timeout === 'number' && timeout > 0)
+          ? timeout - startTimer.click()
+          : false,
+        enviroment,
+        context
+      });
 
       tRoot
         .attach(r.__t)
-        .w('• ACTION = %s', actionName);
+        .w('• CHECK ACTION = %s', actionName);
 
       trace.push({
         type: 'permission',
@@ -323,43 +301,25 @@ export class Lilu {
       let passed = false;
 
       try {
-        if (timeout) {
-          const timeoutLeft = timeout - startTimer.click();
-
-          passed = await promiseTimeout(
-            handlePermission(permission),
-            timeoutLeft,
-            `timeout - ${permission.title}`,
-          );
-        } else {
-          passed = await handlePermission(permission);
-        }
+        passed = await handlePermission(permission);
       } catch (err) {
         const errCode = err.code || -1;
         const errMsg = err.message;
-        const isTimeoutError = err.name === 'LiluTimeoutError';
-        const isCriticalError = !isTimeoutError && errCode === -1;
 
-        if (isTimeoutError) isTimeout = true;
-
-        tChild
-          .w(isTimeoutError ? '⏰ (Permission)' : '❌❌❌ (Permission)')
+        tRoot.child()
+          .w('❌❌❌ (Permission)')
           .w('• title = %s', permission.title)
           .w('• err_code = %d', errCode)
           .w('• err_msg = %s', errMsg)
-          .w('• context = %s', JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  '));
+          .w('• context = %s', JSON.stringify(context, null, 2).replace(/\n/g, '\n  '));
 
-        if (isCriticalError) {
-          throw new LiluGrantedError(
-            errCode,
-            errMsg,
-            trace,
-            tRoot.collect(),
-            err,
-          );
-        }
-
-        errors.push({ errCode, errMsg });
+        throw new LiluGrantedError(
+          errCode,
+          errMsg,
+          [],
+          tRoot.collect(),
+          err.originErr || err,
+        );
       }
 
       if (passed) {
@@ -374,12 +334,20 @@ export class Lilu {
     actions: Array<string>,
     options: GrantedOptions
   ): Promise<GrantedManyResult> {
-    options = options || {};
+    const {
+      enviroment = this._enviroment,
+      timeout = this._timeout,
+      context = {},
+    } = options;
 
-    const matched: Array<PermissionJSON> = [];
-    const mismatched: Array<PermissionJSON> = [];
     const trace: Array<TracePermission> = [];
     const tRoot = tbag();
+
+    const allow: Array<string> = [];
+    const disallow: Array<string> = [];
+
+    const matchedMap: Map<Permission, true> = new Map();
+    const mismatchedMap: Map<Permission, true> = new Map();
 
     let errors: Array<GrantedResultError> = [];
     let unprocessedActions = [...actions];
@@ -387,49 +355,115 @@ export class Lilu {
 
     const startTimer = timer();
 
-    while(unprocessedActions.length > 0) {
+    const handlePermission = async (permission: Permission): Promise<boolean> => {
+      try {
+        const r = await this._checkPermission(permission, {
+          enviroment,
+          context,
+          timeout: typeof timeout === 'number' && timeout > 0
+            ? timeout - startTimer.click()
+            : false
+        });
+
+        isTimeout = r.timeout;
+
+        tRoot.attach(r.__t)
+        trace.push({
+          type: 'permission',
+          item: permission.toJSON(),
+          result: r,
+        });
+
+        if (r.error) {
+          errors.push({
+            errCode: r.errCode || -1,
+            errMsg: r.errMsg || 'unknown error',
+          });
+        }
+
+        if (r.result) {
+          matchedMap.set(permission, true);
+          return true
+        }
+
+        mismatchedMap.set(permission, true);
+        return false;
+      } catch (err) {
+        const errCode = err.code || -1;
+        const errMsg = err.message;
+
+        tRoot.child()
+          .w('❌❌❌ (Permission)')
+          .w('• title = %s', permission.title)
+          .w('• err_code = %d', errCode)
+          .w('• err_msg = %s', errMsg)
+          .w('• context = %s', JSON.stringify(context, null, 2).replace(/\n/g, '\n  '));
+
+        throw new LiluGrantedError(
+          errCode,
+          errMsg,
+          [],
+          tRoot.collect(),
+          err.originErr || err,
+        );
+      }
+    };
+
+    while (unprocessedActions.length > 0 && !isTimeout) {
       const actionName = unprocessedActions.pop();
 
       if (!actionName) break;
 
-      const opts = { ...options };
+      let permissions = this._permissionsByActionMap.get(actionName);
 
-      if (typeof opts.timeout === 'number' && opts.timeout > 0) {
-        opts.timeout -= startTimer.click();
+      if (!permissions || !permissions.length) {
+        disallow.push(actionName);
+        continue;
+      }
 
-        if (opts.timeout <= 0) {
-          isTimeout = true;
+      // Is already matched
+      if (permissions.some(p => matchedMap.has(p))) {
+        allow.push(actionName);
+        continue;
+      }
+
+      // cut off mismatched
+      permissions = permissions.filter(p => !mismatchedMap.has(p));
+
+      if (!permissions.length) {
+        disallow.push(actionName);
+        continue;
+      }
+
+      let passed = false;
+
+      for (const permission of permissions) {
+        passed = await handlePermission(permission);
+
+        if (passed) {
           break;
         }
       }
 
-      let result = await this._granted(actionName, opts);
-
-      isTimeout = result.timeout;
-
-      tRoot.attach(result.__t)
-      trace.push(...result.trace.toJSON());
-      errors.push(...result.errors);
-
-      if (result.passed && result.permission) {
-        // take all actions from permission and exclude from processing list
-        unprocessedActions
-          = array.pull(unprocessedActions, result.permission.actions);
-
-        matched.push(result.permission);
+      if (passed) {
+        allow.push(actionName);
       } else {
-        mismatched.push(...result.mismatched);
+        disallow.push(actionName);
       }
     }
 
     const ms = startTimer.click();
-
-    const allow = array.pull(actions, unprocessedActions);
-    const disallow = [...unprocessedActions];
     const passed = actions.length === allow.length && !disallow.length;
 
+    const symPrefix = errors.length
+        ? '❌'
+        : passed ? '✅' : '🔴';
+
+    const matched = Array.from(matchedMap.keys());
+    const mismatched = Array.from(mismatchedMap.keys());
+
     tRoot
-      .w('%s (Granted Many) / %d ms', passed ? '✅' : '🔴', ms)
+      .w('%s (Granted Many) / %d ms', symPrefix, ms)
       .w('• ALLOW = %s', allow.join('\n        - ') || 'N/A')
       .w('• DISALLOW = %s', disallow.join('\n           - ') || 'N/A')
       .w('• MATCHED = %s', matched.map(v => v.title).join('\n          - ') || 'N/A')
@@ -441,7 +475,10 @@ export class Lilu {
 
     return {
       actions: { allow, disallow },
-      permissions: { matched, mismatched },
+      permissions: {
+        matched: matched.map(v => v.toJSON()),
+        mismatched: mismatched.map(v => v.toJSON())
+      },
       passed: passed,
       timeout: isTimeout,
       errors,
@@ -453,5 +490,131 @@ export class Lilu {
       },
       __t: tRoot,
     }
+  }
+
+  async _checkPermission(
+    permission: Permission,
+    options: GrantedOptions
+  ): Promise<CheckPermissionResult> {
+    const {
+      enviroment,
+      timeout,
+      context = {},
+    } = options;
+
+    const startTimer = timer();
+    const wholeContext: EvalContext = obj.clone(context);
+
+    let isVarsComputed = false;
+
+    let tRoot = tbag();
+    let tEnv = tbag();
+
+    // Compute enviroment variables
+    const computePermissionVariables = async () => {
+      for (const variableName of permission.ruleVariables) {
+        const contextValue = obj.get(wholeContext, variableName);
+
+        if (contextValue !== undefined) {
+          continue;
+        }
+
+        if (!isVarsComputed) {
+          tEnv.w('• ENV COMPUTED:');
+          isVarsComputed = true;
+        }
+
+        const ensureTimer = timer();
+        let enviromentValue = obj.get(enviroment, variableName);
+
+        if (typeof enviromentValue === 'function') {
+          try {
+            enviromentValue = await enviromentValue.call(enviroment);
+
+            tEnv.w('  - %s = @%s %o (%d ms)',
+              variableName,
+              typeof enviromentValue,
+              enviromentValue,
+              ensureTimer.click()
+            );
+          } catch (err) {
+            tEnv.w('  - %s = ❌ err:%s (%d ms)',
+              variableName,
+              err.message,
+              ensureTimer.click()
+            );
+          }
+        }
+
+        if (enviromentValue !== undefined) {
+          obj.set(wholeContext, variableName, enviromentValue);
+        }
+      }
+    };
+
+    const handlePermission = async (): Promise<CheckPermissionResult> => {
+      await computePermissionVariables();
+
+      const r = permission.check(wholeContext);
+
+      // @ts-ignore
+      tRoot = r.__t;
+
+      return { ...r, timeout: false };
+    };
+
+    let result: CheckPermissionResult;
+
+    try {
+      if (timeout) {
+        const timeoutLeft = timeout - startTimer.click();
+
+        result = await promiseTimeout(
+          handlePermission(),
+          timeoutLeft,
+          'timeout',
+        );
+      } else {
+        result = await handlePermission();
+      }
+    } catch (err) {
+      const errCode = err.code || -1;
+      const errMsg = err.message;
+      const isTimeoutError = err.name === 'LiluTimeoutError';
+      const isCriticalError = !isTimeoutError && errCode === -1;
+
+      tRoot
+        .w(isTimeoutError ? '⏰ (Permission)' : '❌❌❌ (Permission)')
+        .w('• title = %s', permission.title)
+        .w('• err_code = %d', errCode)
+        .w('• err_msg = %s', errMsg)
+        .w('• context = %s', JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  '))
+        .merge(tEnv);
+
+      if (isCriticalError) {
+        throw new LiluGrantedError(
+          errCode,
+          errMsg,
+          [],
+          tRoot.collect(),
+          err,
+        );
+      } else {
+        result = {
+          trace: [],
+          error: true,
+          timeout: isTimeoutError,
+          errCode,
+          errMsg,
+          ms: 0,
+          __t: tRoot
+        }
+      }
+    }
+
+    tRoot.merge(tEnv).w('');
+
+    result.ms = startTimer.click();
+    return result;
   }
 }
