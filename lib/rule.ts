@@ -157,7 +157,19 @@ export class Rule {
 
       tCond
         .w('%s (Condition #%d)', r.error ? '❌' : r.result ? '✅' : '🔴', n++)
-        .child()
+        // .table()
+        // .row()
+        // .cell(r.error ? 'ERROR' : r.result ? 'OK!' : 'INVALID')
+        // .cell('Condition #%d', n++)
+        // .cell('"%s" = "%o"',
+        //   condition.raw,
+        //   r.error ? `err: ${r.errCode}` : r.result)
+        // .label('%s (Condition #%d) | "%s" = "%o"',
+        //   r.error ? '❌' : r.result ? '👌' : '🔴', n++,
+        //   condition.raw,
+        //   r.error ? `err: ${r.errCode}` : r.result
+        // )
+        // .tableWrite()
         .table()
         .label('"%s" = "%o"', condition.raw, r.error
           ? `err: ${r.errCode}`

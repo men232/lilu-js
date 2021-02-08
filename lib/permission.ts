@@ -138,14 +138,12 @@ export class Permission {
       };
     };
 
-    if (this._strict) {
-      const missedContextKey = this._ruleVariables.find(
-        (keyPath) => obj.get(context, keyPath) === undefined,
-      );
+    const missedContextKey = this._ruleVariables.find(
+      (keyPath) => obj.get(context, keyPath) === undefined,
+    );
 
-      if (missedContextKey) {
-        return fail(6, `missed context variable: ${missedContextKey}`);
-      }
+    if (missedContextKey) {
+      return fail(6, `missed context variable: ${missedContextKey}`);
     }
 
     for (const rule of this._rules) {

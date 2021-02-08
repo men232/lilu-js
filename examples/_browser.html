@@ -6,7 +6,7 @@
   <title>Document</title>
 </head>
 <body>
-  <div id="result">Checking access...</div>
+  <pre id="result">Checking access...</pre>
 </body>
 <script src="../dist/lilu.umd.js"></script>
 <script>
@@ -49,34 +49,40 @@
       operation: 'AND',
       conditions: [
         'env.hours >= 8',
-        'env.hours <= 18'
+        'env.hours <= 18',
       ]
     }]
   }];
+
+  const delay = (ms) => {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
 
   const lilu = window.lilu({
     strict: true,
     enviroment: {
       env: {
-        hours: () => (new Date()).getHours(),
-        minutes: () => (new Date()).getMinutes()
+        hours: () => delay(400).then(() => (new Date()).getHours()),
+        minutes: () => delay(400).then(() => (new Date()).getMinutes())
       },
       user: user
     },
     permissions: permissions
   });
 
-  lilu._grantedMany(['order.view', 'order.create'], { context: { order } }).then(function(result) {
-    console.log(result.trace.toJSON());
-    console.log(result.trace.toString());
+  lilu.grantedMany('order.*', { context: { order } }, function(err, result) {
+    let html = '';
 
-    if (result.passed) {
-      document.getElementById('result')
-        .innerHTML = 'Yahu!!! I have access to review order.';
+    if (err) {
+      html = '<span style="color: red">(Error)</span>\n' + err.toString();
     } else {
-      document.getElementById('result')
-        .innerHTML = 'Oops!! I don\'t have access to review order.';
+      html = result.trace.toString();
     }
+
+    document.getElementById('result').innerHTML = html;
+    console.log(html);
   });
 </script>
 </html>

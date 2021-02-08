@@ -8,8 +8,8 @@ export class LiluGrantedError extends Error {
   public originErr: Error | null;
 
   constructor(
+    code: number,
     message: string,
-    code?: number,
     trace?: Array<TracePermission>,
     execStack?: string,
     originErr?: Error,
@@ -28,9 +28,19 @@ export class LiluGrantedError extends Error {
   }
 
   toString(): string {
-    return `${this.name}(${this.code}, ${this.message})\n${
-      this.originErr ? `- Origin Error: ${this.originErr.stack}\n` : ''
-    }- Exec Stack:\n${this.execStack || '_empty_'}`;
+    const title = `${this.name}(code = ${this.code}, "${this.message}")`;
+
+    const originErr = this.originErr && this.originErr.stack
+      ? '  - Origin Error: ' + this.originErr.stack.replace(/\n/g, '\n    ')
+      : '';
+
+    const execStack = this.execStack
+      ? '  - Exec Stack: ' + this.execStack.replace(/\n/g, '\n    ')
+      : '';
+
+    return [title, originErr, execStack]
+      .filter(v => v && v.length)
+      .join('\n');
   }
 
   toJSON(): object {

@@ -85,7 +85,11 @@ export interface CheckPermissionResult extends PermissionCheckResult {
   timeout: boolean;
 }
 
-export type GrantedCallback = (err: Error, passed: boolean) => void;
+export type GrantedCallback = (err: Error | null, passed: GrantedResult) => void;
+
+export type GrantedManyCallback = (err: Error | null, passed: GrantedManyResult) => void;
+
+type Callback = (err?: Error | null, result?: object) => void;
 
 export interface TracePermission extends TraceBase {
   type: 'permission';
@@ -217,12 +221,119 @@ export class Lilu {
     const self = this;
 
     return promiseOrCallback(callback, function() {
-      const cb = arguments[0] as (err?: Error | null, result?: object) => void;
-      self._granted(actionName, options).then(cb.bind(null, null), cb);
+      const cb = arguments[0] as Callback;
+      self._granted(actionName, options)
+        .then(cb.bind(null, null), cb);
     });
   }
 
-  async _granted(
+  grantedMany(
+    actions: Array<string> | string | RegExp,
+    optionsOrContextOrCallback?:
+      | EvalContext
+      | Partial<GrantedOptions>
+      | GrantedManyCallback,
+    cb?: GrantedManyCallback,
+  ): Promise<GrantedManyResult> {
+    let callback: GrantedManyCallback | undefined = cb;
+
+    const options: GrantedOptions = {
+      timeout: this._timeout || false,
+      enviroment: this._enviroment || {},
+      context: {},
+    };
+
+    if (typeof actions === 'string') {
+      if (actions.indexOf('*') > -1) {
+        const pattern = actions;
+        actions = this.findActions(pattern);
+      } else {
+        actions = [actions];
+      }
+    } else if (actions instanceof RegExp) {
+      const pattern = actions;
+
+      actions = this.findActions(pattern);
+    }
+
+    if (!Array.isArray(actions)) {
+      throw new TypeError('First argument "actions" expected as Array.');
+    }
+
+    if (typeof optionsOrContextOrCallback === 'function') {
+      callback = optionsOrContextOrCallback as GrantedManyCallback;
+    } else if (
+      optionsOrContextOrCallback &&
+      optionsOrContextOrCallback.context
+    ) {
+      Object.assign(options, optionsOrContextOrCallback);
+    } else if (typeof optionsOrContextOrCallback === 'object') {
+      options.context = optionsOrContextOrCallback;
+    }
+
+    const self = this;
+
+    return promiseOrCallback(callback, function() {
+      const cb = arguments[0] as Callback;
+      self._grantedMany(actions as string[], options)
+        .then(cb.bind(null, null), cb);
+    });
+  }
+
+  grantedAny(
+    actions: Array<string> | string | RegExp,
+    optionsOrContextOrCallback?:
+      | EvalContext
+      | Partial<GrantedOptions>
+      | GrantedCallback,
+    cb?: GrantedCallback,
+  ): Promise<GrantedResult> {
+    let callback: GrantedCallback | undefined = cb;
+
+    const options: GrantedOptions = {
+      timeout: this._timeout || false,
+      enviroment: this._enviroment || {},
+      context: {},
+    };
+
+    if (typeof actions === 'string') {
+      if (actions.indexOf('*') > -1) {
+        const pattern = actions;
+        actions = this.findActions(pattern);
+      } else {
+        actions = [actions];
+      }
+    } else if (actions instanceof RegExp) {
+      const pattern = actions;
+
+      actions = this.findActions(pattern);
+    }
+
+    if (!Array.isArray(actions)) {
+      throw new TypeError('First argument "actions" expected as Array.');
+    }
+
+    if (typeof optionsOrContextOrCallback === 'function') {
+      callback = optionsOrContextOrCallback as GrantedCallback;
+    } else if (
+      optionsOrContextOrCallback &&
+      optionsOrContextOrCallback.context
+    ) {
+      Object.assign(options, optionsOrContextOrCallback);
+    } else if (typeof optionsOrContextOrCallback === 'object') {
+      options.context = optionsOrContextOrCallback;
+    }
+
+    const self = this;
+
+    return promiseOrCallback(callback, function() {
+      const cb = arguments[0] as Callback;
+      self._grantedAny(actions as string[], options)
+        .then(cb.bind(null, null), cb);
+    });
+  }
+
+  protected async _granted(
     actionName: string,
     options: GrantedOptions,
   ): Promise<GrantedResult> {
@@ -303,23 +414,29 @@ export class Lilu {
       try {
         passed = await handlePermission(permission);
       } catch (err) {
-        const errCode = err.code || -1;
-        const errMsg = err.message;
+        errors.push({
+          errCode: err.code || -1,
+          errMsg: err.message || 'unknown error',
+        });
 
-        tRoot.child()
-          .w('❌❌❌ (Permission)')
-          .w('• title = %s', permission.title)
-          .w('• err_code = %d', errCode)
-          .w('• err_msg = %s', errMsg)
-          .w('• context = %s', JSON.stringify(context, null, 2).replace(/\n/g, '\n  '));
+        if (err.name === 'LiluGrantedError') {
+          err.execStack = err.execStack
+            ? tRoot.child().w(err.execStack).collect()
+            : tRoot.collect();
+        } else {
+          const errCode = err.code || -1;
+          const errMsg = err.message;
 
-        throw new LiluGrantedError(
-          errCode,
-          errMsg,
-          [],
-          tRoot.collect(),
-          err.originErr || err,
-        );
+          err = new LiluGrantedError(
+            errCode,
+            errMsg,
+            trace,
+            tRoot.collect(),
+            err.originErr || err,
+          );
+        }
+
+        throw err;
       }
 
       if (passed) {
@@ -330,7 +447,7 @@ export class Lilu {
     return complete();
   }
 
-  async _grantedMany(
+  protected async _grantedMany(
     actions: Array<string>,
     options: GrantedOptions
   ): Promise<GrantedManyResult> {
@@ -355,58 +472,111 @@ export class Lilu {
 
     const startTimer = timer();
 
-    const handlePermission = async (permission: Permission): Promise<boolean> => {
-      try {
-        const r = await this._checkPermission(permission, {
-          enviroment,
-          context,
-          timeout: typeof timeout === 'number' && timeout > 0
-            ? timeout - startTimer.click()
-            : false
-        });
+    const done = (): GrantedManyResult => {
+      const ms = startTimer.click();
+      const passed = actions.length === allow.length && !disallow.length;
 
-        isTimeout = r.timeout;
+      const symPrefix = errors.length
+        ? '❌'
+        : passed ? '✅' : '🔴';
 
-        tRoot.attach(r.__t)
-        trace.push({
-          type: 'permission',
-          item: permission.toJSON(),
-          result: r,
-        });
+      const matched = Array.from(matchedMap.keys());
+      const mismatched = Array.from(mismatchedMap.keys());
 
-        if (r.error) {
-          errors.push({
-            errCode: r.errCode || -1,
-            errMsg: r.errMsg || 'unknown error',
-          });
-        }
+      tRoot.w('%s (Granted Many) / %d ms', symPrefix, ms);
 
-        if (r.result) {
-          matchedMap.set(permission, true);
-          return true
-        }
+      if (errors.length) {
+        tRoot.w('• ERRORS = %d', errors.length);
+      }
 
-        mismatchedMap.set(permission, true);
-        return false;
-      } catch (err) {
+      tRoot
+        .w('• PASSED = %o', passed)
+        .w('• TIMEOUT = %o', isTimeout)
+        .w('• ALLOW = %s', allow.join('\n        - ') || 'N/A')
+        .w('• DISALLOW = %s', disallow.join('\n           - ') || 'N/A')
+        .w('• MATCHED = %s', matched.map(v => v.title).join('\n          - ') || 'N/A')
+        .w('• MISMATCHED = %s', mismatched.map(v => v.title).join('\n             - ') || 'N/A');
+
+      return {
+        actions: { allow, disallow },
+        permissions: {
+          matched: matched.map(v => v.toJSON()),
+          mismatched: mismatched.map(v => v.toJSON())
+        },
+        passed: passed,
+        timeout: isTimeout,
+        errors,
+        nErrors: errors.length,
+        ms,
+        trace: {
+          toString: () => tRoot.collect(),
+          toJSON: () => obj.clone(trace),
+        },
+        __t: tRoot,
+      }
+    };
+
+    const onError = (err: any) => {
+      errors.push({
+        errCode: err.code || -1,
+        errMsg: err.message || 'unknown error',
+      });
+
+      // call to collect current state
+      done();
+
+      if (err.name === 'LiluGrantedError') {
+        err.execStack = err.execStack
+          ? tRoot.child().w(err.execStack).collect()
+          : tRoot.collect();
+      } else {
         const errCode = err.code || -1;
         const errMsg = err.message;
 
-        tRoot.child()
-          .w('❌❌❌ (Permission)')
-          .w('• title = %s', permission.title)
-          .w('• err_code = %d', errCode)
-          .w('• err_msg = %s', errMsg)
-          .w('• context = %s', JSON.stringify(context, null, 2).replace(/\n/g, '\n  '));
-
-        throw new LiluGrantedError(
+        err = new LiluGrantedError(
           errCode,
           errMsg,
-          [],
+          trace,
           tRoot.collect(),
           err.originErr || err,
         );
       }
+
+      throw err;
+    };
+
+    const handlePermission = async (permission: Permission, targetAction: string): Promise<boolean> => {
+      const r = await this._checkPermission(permission, {
+        enviroment,
+        context,
+        timeout: typeof timeout === 'number' && timeout > 0
+          ? timeout - startTimer.click()
+          : false
+      });
+
+      isTimeout = r.timeout;
+
+      tRoot.attach(r.__t).w('• CHECK ACTION = %s', targetAction)
+      trace.push({
+        type: 'permission',
+        item: permission.toJSON(),
+        result: r,
+      });
+
+      if (r.error) {
+        errors.push({
+          errCode: r.errCode || -1,
+          errMsg: r.errMsg || 'unknown error',
+        });
+      }
+
+      if (r.result) {
+        matchedMap.set(permission, true);
+        return true
+      }
+
+      mismatchedMap.set(permission, true);
+      return false;
     };
 
     while (unprocessedActions.length > 0 && !isTimeout) {
@@ -435,61 +605,183 @@ export class Lilu {
         continue;
       }
 
-      let passed = false;
-
       for (const permission of permissions) {
-        passed = await handlePermission(permission);
+        try {
+          const passed = await handlePermission(permission, actionName);
 
-        if (passed) {
-          break;
+          if (passed) {
+            allow.push(actionName);
+            break;
+          } else {
+            disallow.push(actionName);
+          }
+        } catch (err) {
+          return onError(err);
         }
-      }
-
-      if (passed) {
-        allow.push(actionName);
-      } else {
-        disallow.push(actionName);
       }
     }
 
-    const ms = startTimer.click();
-    const passed = actions.length === allow.length && !disallow.length;
+    return done();
+  }
 
-    const symPrefix = errors.length
+  protected async _grantedAny(
+    actions: Array<string>,
+    options: GrantedOptions
+  ): Promise<GrantedResult> {
+    const {
+      enviroment = this._enviroment,
+      timeout = this._timeout,
+      context = {},
+    } = options;
+
+    const trace: Array<TracePermission> = [];
+    const tRoot = tbag();
+
+    const mismatchedMap: Map<Permission, true> = new Map();
+
+    let errors: Array<GrantedResultError> = [];
+    let unprocessedActions = [...actions];
+    let isTimeout = false;
+    let passed = false;
+    let lastCheckPermission: Permission| null = null;
+
+    const startTimer = timer();
+
+    const done = (): GrantedResult => {
+      const ms = startTimer.click();
+
+      const symPrefix = errors.length
         ? '❌'
         : passed ? '✅' : '🔴';
 
-    const matched = Array.from(matchedMap.keys());
-    const mismatched = Array.from(mismatchedMap.keys());
+      const allow = lastCheckPermission !== null
+        ? lastCheckPermission.actions
+        : [];
 
-    tRoot
-      .w('%s (Granted Many) / %d ms', symPrefix, ms)
-      .w('• ALLOW = %s', allow.join('\n        - ') || 'N/A')
-      .w('• DISALLOW = %s', disallow.join('\n           - ') || 'N/A')
-      .w('• MATCHED = %s', matched.map(v => v.title).join('\n          - ') || 'N/A')
-      .w('• MISMATCHED = %s', mismatched.map(v => v.title).join('\n             - ') || 'N/A');
+      const mismatched = Array.from(mismatchedMap.keys()).map(v => v.toJSON());
 
-    if (errors.length) {
-      tRoot.w('• ERRORS = %d', errors.length);
+      tRoot.w('%s (Granted Any) / %d ms', symPrefix, ms);
+
+      if (errors.length) {
+        tRoot.w('• ERRORS = %d', errors.length);
+      }
+
+      tRoot
+        .w('• TIMEOUT = %o', isTimeout)
+        .w('• ALLOW = %s', allow.join('\n        - ') || 'N/A')
+        .w('• MISMATCHED = %s', mismatched.map(v => v.title).join('\n             - ') || 'N/A');
+
+      return {
+        passed,
+        timeout: isTimeout,
+        mismatched,
+        errors,
+        nErrors: errors.length,
+        permission: lastCheckPermission !== null
+          ? lastCheckPermission.toJSON()
+          : null,
+        ms,
+        trace: {
+          toString: () => tRoot.collect(),
+          toJSON: () => obj.clone(trace),
+        },
+        __t: tRoot
+      }
+    };
+
+    const onError = (err: any) => {
+      errors.push({
+        errCode: err.code || -1,
+        errMsg: err.message || 'unknown error',
+      });
+
+      // call to collect current state
+      done();
+
+      if (err.name === 'LiluGrantedError') {
+        err.execStack = err.execStack
+          ? tRoot.child().w(err.execStack).collect()
+          : tRoot.collect();
+      } else {
+        const errCode = err.code || -1;
+        const errMsg = err.message;
+
+        err = new LiluGrantedError(
+          errCode,
+          errMsg,
+          trace,
+          tRoot.collect(),
+          err.originErr || err,
+        );
+      }
+
+      throw err;
+    };
+
+    const handlePermission = async (permission: Permission): Promise<boolean> => {
+      const r = await this._checkPermission(permission, {
+        enviroment,
+        context,
+        timeout: typeof timeout === 'number' && timeout > 0
+          ? timeout - startTimer.click()
+          : false
+      });
+
+      isTimeout = r.timeout;
+
+      tRoot.attach(r.__t)
+      trace.push({
+        type: 'permission',
+        item: permission.toJSON(),
+        result: r,
+      });
+
+      if (r.error) {
+        errors.push({
+          errCode: r.errCode || -1,
+          errMsg: r.errMsg || 'unknown error',
+        });
+      }
+
+      if (r.result) {
+        return true;
+      }
+
+      mismatchedMap.set(permission, true);
+      return false;
+    };
+
+    while (unprocessedActions.length > 0 && !isTimeout && !passed) {
+      const actionName = unprocessedActions.pop();
+
+      if (!actionName) break;
+
+      let permissions = this._permissionsByActionMap.get(actionName);
+
+      if (!permissions || !permissions.length) {
+        continue;
+      }
+
+       // cut off mismatched
+      permissions = permissions.filter(p => !mismatchedMap.has(p));
+
+      if (!permissions.length) {
+        continue;
+      }
+
+      for (const permission of permissions) {
+        try {
+          passed = await handlePermission(permission);
+          lastCheckPermission = permission;
+        } catch (err) {
+          return onError(err);
+        }
+
+        if (passed) return done();
+      }
     }
 
-    return {
-      actions: { allow, disallow },
-      permissions: {
-        matched: matched.map(v => v.toJSON()),
-        mismatched: mismatched.map(v => v.toJSON())
-      },
-      passed: passed,
-      timeout: isTimeout,
-      errors,
-      nErrors: errors.length,
-      ms,
-      trace: {
-        toString: () => tRoot.collect(),
-        toJSON: () => obj.clone(trace),
-      },
-      __t: tRoot,
-    }
+    return done();
   }
 
   async _checkPermission(
@@ -531,18 +823,20 @@ export class Lilu {
           try {
             enviromentValue = await enviromentValue.call(enviroment);
 
-            tEnv.w('  - %s = @%s %o (%d ms)',
+            tEnv.w('    - %s = @%s %o (%d ms)',
               variableName,
               typeof enviromentValue,
               enviromentValue,
               ensureTimer.click()
             );
           } catch (err) {
-            tEnv.w('  - %s = ❌ err:%s (%d ms)',
+            tEnv.w('    - %s = ❌ err:%s (%d ms)',
               variableName,
               err.message,
               ensureTimer.click()
             );
+
+            if (this._strict) throw err;
           }
         }
 
@@ -577,28 +871,46 @@ export class Lilu {
       } else {
         result = await handlePermission();
       }
+
+      if (result.error && this._strict) {
+        throw new LiluGrantedError(
+          result.errCode || -1,
+          result.errMsg || 'unknown error'
+        );
+      }
     } catch (err) {
       const errCode = err.code || -1;
       const errMsg = err.message;
       const isTimeoutError = err.name === 'LiluTimeoutError';
       const isCriticalError = !isTimeoutError && errCode === -1;
 
-      tRoot
-        .w(isTimeoutError ? '⏰ (Permission)' : '❌❌❌ (Permission)')
-        .w('• title = %s', permission.title)
-        .w('• err_code = %d', errCode)
-        .w('• err_msg = %s', errMsg)
-        .w('• context = %s', JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  '))
-        .merge(tEnv);
+      if (isTimeoutError || isCriticalError) {
+        tRoot
+          .w(isTimeoutError ? '⏰ (Permission)' : '❌❌❌ (Permission)')
+          .w('• title = %s', permission.title)
+          .w('• err_code = %d', errCode)
+          .w('• err_msg = %s', errMsg)
+          .w('• context = %s', JSON.stringify(wholeContext, null, 2).replace(/\n/g, '\n  '))
+      }
 
-      if (isCriticalError) {
-        throw new LiluGrantedError(
+      tRoot.merge(tEnv);
+
+      if (err.name !== 'LiluGrantedError') {
+        err = new LiluGrantedError(
           errCode,
           errMsg,
           [],
           tRoot.collect(),
-          err,
-        );
+          err.originErr || err,
+        )
+      } else {
+        err.execStack = err.execStack
+          ? tRoot.child().w(err.execStack).collect()
+          : tRoot.collect();
+      }
+
+      if (isCriticalError || (!isTimeoutError && this._strict)) {
+        throw err;
       } else {
         result = {
           trace: [],
@@ -612,7 +924,7 @@ export class Lilu {
       }
     }
 
-    tRoot.merge(tEnv).w('');
+    tRoot.merge(tEnv);
 
     result.ms = startTimer.click();
     return result;
