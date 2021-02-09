@@ -1,4 +1,4 @@
-export class LiluExpressionParserError extends Error {
+export class LiluExpressionError extends Error {
   name: string;
   expressionText: string | null;
   code: number;
@@ -6,7 +6,7 @@ export class LiluExpressionParserError extends Error {
   constructor(message: string, expressionText?: string, code?: number) {
     super(message);
 
-    this.name = 'LiluExpressionParserError';
+    this.name = 'LiluExpressionError';
     this.expressionText = expressionText || null;
     this.code = code || -1;
   }

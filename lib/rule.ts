@@ -61,9 +61,6 @@ export class Rule {
         operators: options.operators || DEFAULT_OPERATORS,
       };
 
-      exprOptions.strict = options.strict || false;
-      exprOptions.operators = options.operators || DEFAULT_OPERATORS;
-
       return new Expression(exprStr, exprOptions);
     });
 

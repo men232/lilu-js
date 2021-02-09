@@ -1,4 +1,5 @@
 import { TracePermission } from '../lilu';
+import tbag from '../utils/tbag';
 
 export class LiluGrantedError extends Error {
   public name: string;
@@ -56,5 +57,42 @@ export class LiluGrantedError extends Error {
 
   inspect(): object {
     return Object.assign(new Error(this.message), this);
+  }
+
+  static from(
+    err: LiluGrantedError | any,
+    extendTrace?: Array<TracePermission>,
+    extendExecStack?: string
+  ): LiluGrantedError {
+    const errCode = err.code || -1;
+    const errMsg = err.message || 'unknown error';
+    const newErr = new LiluGrantedError(errCode, errMsg);
+
+    if (err instanceof LiluGrantedError) {
+      newErr.trace = [
+        ...(extendTrace || []),
+        ...(err.trace || [])
+      ];
+
+      if (extendExecStack) {
+        const tRoot = tbag().w(extendExecStack);
+
+        if (err.execStack) {
+          tRoot.child().w(err.execStack);
+        }
+
+        newErr.execStack = tRoot.collect();
+      } else {
+        newErr.execStack = err.execStack || '';
+      }
+
+      newErr.originErr = err.originErr || err;
+    } else {
+      newErr.trace = extendTrace || [];
+      newErr.execStack = extendExecStack || '';
+      newErr.originErr = err;
+    }
+
+    return newErr;
   }
 }

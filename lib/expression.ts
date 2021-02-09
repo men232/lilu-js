@@ -5,7 +5,7 @@ import * as ESTree from 'estree';
 
 import * as obj from './utils/object';
 import { DEFAULT_OPERATORS, OperatorMap } from './operators';
-import { LiluExpressionParserError } from './errors/LiluExpressionParserError';
+import { LiluExpressionError } from './errors/LiluExpressionError';
 
 const d = debug('lilu:expression');
 const dError = debug('lilu:expression:error');
@@ -73,7 +73,6 @@ export interface ExpressionJSON {
   operators: string[];
   isValid: boolean;
   name: string;
-  strict: boolean;
 }
 
 export type LiteralType =
@@ -99,15 +98,21 @@ export type ParsedItem =
   | ParsedLiteral
   | ParsedUnknown;
 
+export const EXPRESSION_LITERAL_TYPES = [
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'variable',
+  'expression',
+  'array',
+  'null',
+];
+
 export class Expression {
   protected _raw: string;
-
   protected _parsed: Array<ParsedItem>;
-
   protected _variables: Array<string>;
-
-  protected _strict: boolean;
-
   protected _operators: OperatorMap;
 
   constructor(str: string, options?: Partial<ExpressionOptions>) {
@@ -116,19 +121,14 @@ export class Expression {
     this._raw = str;
     this._parsed = [];
     this._variables = [];
-    this._strict = options.strict || false;
     this._operators = obj.clone(options.operators || DEFAULT_OPERATORS);
 
     this._parse();
-    this.validate();
+    this._validateAndThrow();
   }
 
   get name(): string {
     return 'LiLuExpression';
-  }
-
-  get strict(): boolean {
-    return this._strict;
   }
 
   get raw(): string {
@@ -141,73 +141,10 @@ export class Expression {
 
   get isValid(): boolean {
     try {
-      this.validate();
+      this._validateAndThrow();
       return true;
     } catch (_) {
       return false;
-    }
-  }
-
-  validate(): boolean {
-    if (this._parsed === null) {
-      this._parse();
-    }
-
-    if (!this._parsed || !Array.isArray(this._parsed)) {
-      throw new LiluExpressionParserError(
-        'Unknown error while parsing an expression.',
-        this._raw,
-      );
-    }
-
-    const raw = this._raw;
-    const parsed = this._parsed;
-
-    switch (true) {
-      case parsed.length !== 3:
-        throw new LiluExpressionParserError(
-          `Expect 3 parts of expression, parsed: ${parsed.length}`,
-          raw,
-        );
-
-      case parsed[0].type === 'operator':
-        throw new LiluExpressionParserError(
-          'The first part of expression is operator.',
-          raw,
-        );
-
-      case parsed[0].type === 'unknown':
-        throw new LiluExpressionParserError(
-          'The first part of expression is unknown.',
-          raw,
-        );
-
-      case parsed[1].type !== 'operator':
-        throw new LiluExpressionParserError(
-          `The second part of expression must be an operator, parsed: ${parsed[1].type}.`,
-          raw,
-        );
-
-      case typeof this._operators[parsed[1].value] !== 'function':
-        throw new LiluExpressionParserError(
-          `The second part operator has unknown, parsed: ${parsed[1].value}.`,
-          raw,
-        );
-
-      case parsed[2].type === 'unknown':
-        throw new LiluExpressionParserError(
-          'The third part of expression is unknown.',
-          raw,
-        );
-
-      case parsed[2].type === 'operator':
-        throw new LiluExpressionParserError(
-          'The third part of expression is operator.',
-          raw,
-        );
-
-      default:
-        return true;
     }
   }
 
@@ -220,7 +157,6 @@ export class Expression {
   toJSON(): ExpressionJSON {
     return {
       name: this.name,
-      strict: this.strict,
       str: this.raw,
       variables: this.variables,
       operators: Object.keys(this._operators),
@@ -254,16 +190,6 @@ export class Expression {
       };
     };
 
-    // if (this._strict) {
-    //   const missedContextKey = this._variables.find(
-    //     (keyPath) => obj.get(context, keyPath) === undefined,
-    //   );
-    //
-    //   if (missedContextKey) {
-    //     return fail(-1, `missed context variable: ${missedContextKey}`);
-    //   }
-    // }
-
     try {
       const left = this._parsed[0];
       const operator = this._parsed[1] as ParsedOperator;
@@ -282,11 +208,8 @@ export class Expression {
 
       const operatorFn = this._operators[operator.value];
 
-      if (typeof operatorFn !== 'function') throw new LiluExpressionEvalError(
-        `Attempt to eval with unknown operator: ${operator.value}`,
-        this._raw,
-        context,
-        2
+      if (typeof operatorFn !== 'function') throw new Error(
+        `Attempt to eval with unknown operator: ${this._raw}`
       );
 
       const result: boolean = operatorFn(
@@ -321,6 +244,64 @@ export class Expression {
 
   inspect(): object {
     return Object.assign({}, this);
+  }
+
+  protected _validateAndThrow(): boolean {
+    if (this._parsed === null) {
+      this._parse();
+    }
+
+    if (!this._parsed || !Array.isArray(this._parsed)) {
+      throw new LiluExpressionError(
+        'Unknown error while parsing an expression.',
+        this._raw,
+      );
+    }
+
+    const raw = this._raw;
+    const parsed = this._parsed;
+
+    const isLiteral = (type: string) =>
+      EXPRESSION_LITERAL_TYPES.indexOf(type) > -1;
+
+    switch (true) {
+      case parsed.length !== 3:
+        throw new LiluExpressionError(
+          `Expect 3 parts of expression, parsed: ${parsed.length}`,
+          raw,
+        );
+
+      case !isLiteral(parsed[0].type):
+        throw new LiluExpressionError(
+          `The first part of expression expected to be ${JSON.stringify(
+            EXPRESSION_LITERAL_TYPES,
+          )} parsed as: ${parsed[0].type}`,
+          raw,
+        );
+
+      case parsed[1].type !== 'operator':
+        throw new LiluExpressionError(
+          `The second part of expression expected to be an operator, parsed as: ${parsed[1].type}.`,
+          raw,
+        );
+
+      case typeof this._operators[parsed[1].value] !== 'function':
+        throw new LiluExpressionError(
+          `The second part of expression is unknown operator: ${parsed[1].value}.`,
+          raw,
+        );
+
+      case !isLiteral(parsed[2].type):
+        throw new LiluExpressionError(
+          `The third part of expression expected to be ${JSON.stringify(
+            EXPRESSION_LITERAL_TYPES,
+          )} parsed as: ${parsed[2].type}`,
+          raw,
+        );
+
+      default:
+        return true;
+    }
   }
 
   protected _parse(): void {
@@ -397,7 +378,7 @@ export class Expression {
       const expr = esprima.parseScript(str).body[0];
 
       if (expr.type !== 'ExpressionStatement') {
-        throw new LiluExpressionParserError(
+        throw new LiluExpressionError(
           `Unexpected esprima expression type ${expr.type}`,
         );
       }

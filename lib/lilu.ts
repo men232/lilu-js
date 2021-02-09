@@ -414,27 +414,12 @@ export class Lilu {
       try {
         passed = await handlePermission(permission);
       } catch (err) {
+        err = LiluGrantedError.from(err, trace, tRoot.collect());
+
         errors.push({
-          errCode: err.code || -1,
-          errMsg: err.message || 'unknown error',
+          errCode: err.code,
+          errMsg: err.message,
         });
-
-        if (err.name === 'LiluGrantedError') {
-          err.execStack = err.execStack
-            ? tRoot.child().w(err.execStack).collect()
-            : tRoot.collect();
-        } else {
-          const errCode = err.code || -1;
-          const errMsg = err.message;
-
-          err = new LiluGrantedError(
-            errCode,
-            errMsg,
-            trace,
-            tRoot.collect(),
-            err.originErr || err,
-          );
-        }
 
         throw err;
       }
@@ -517,30 +502,15 @@ export class Lilu {
     };
 
     const onError = (err: any) => {
+      err = LiluGrantedError.from(err, trace, tRoot.collect());
+
       errors.push({
-        errCode: err.code || -1,
-        errMsg: err.message || 'unknown error',
+        errCode: err.code,
+        errMsg: err.message,
       });
 
       // call to collect current state
       done();
-
-      if (err.name === 'LiluGrantedError') {
-        err.execStack = err.execStack
-          ? tRoot.child().w(err.execStack).collect()
-          : tRoot.collect();
-      } else {
-        const errCode = err.code || -1;
-        const errMsg = err.message;
-
-        err = new LiluGrantedError(
-          errCode,
-          errMsg,
-          trace,
-          tRoot.collect(),
-          err.originErr || err,
-        );
-      }
 
       throw err;
     };
@@ -690,30 +660,15 @@ export class Lilu {
     };
 
     const onError = (err: any) => {
+      err = LiluGrantedError.from(err, trace, tRoot.collect());
+
       errors.push({
-        errCode: err.code || -1,
-        errMsg: err.message || 'unknown error',
+        errCode: err.code,
+        errMsg: err.message,
       });
 
       // call to collect current state
       done();
-
-      if (err.name === 'LiluGrantedError') {
-        err.execStack = err.execStack
-          ? tRoot.child().w(err.execStack).collect()
-          : tRoot.collect();
-      } else {
-        const errCode = err.code || -1;
-        const errMsg = err.message;
-
-        err = new LiluGrantedError(
-          errCode,
-          errMsg,
-          trace,
-          tRoot.collect(),
-          err.originErr || err,
-        );
-      }
 
       throw err;
     };
@@ -830,10 +785,11 @@ export class Lilu {
               ensureTimer.click()
             );
           } catch (err) {
-            tEnv.w('    - %s = ❌ err:%s (%d ms)',
+            tEnv.w('    - %s = ❌ err:%s (%d ms)\n       - %s',
               variableName,
               err.message,
-              ensureTimer.click()
+              ensureTimer.click(),
+              err.stack.replace(/\n/g, '\n       - ')
             );
 
             if (this._strict) throw err;
@@ -873,11 +829,20 @@ export class Lilu {
       }
 
       if (result.error && this._strict) {
+        const trace: Array<TracePermission> = [{
+          type: 'permission',
+          item: permission.toJSON(),
+          result
+        }];
+
         throw new LiluGrantedError(
           result.errCode || -1,
-          result.errMsg || 'unknown error'
+          result.errMsg || 'unknown error',
+          trace
         );
       }
+
+      tRoot.merge(tEnv);
     } catch (err) {
       const errCode = err.code || -1;
       const errMsg = err.message;
@@ -895,22 +860,8 @@ export class Lilu {
 
       tRoot.merge(tEnv);
 
-      if (err.name !== 'LiluGrantedError') {
-        err = new LiluGrantedError(
-          errCode,
-          errMsg,
-          [],
-          tRoot.collect(),
-          err.originErr || err,
-        )
-      } else {
-        err.execStack = err.execStack
-          ? tRoot.child().w(err.execStack).collect()
-          : tRoot.collect();
-      }
-
-      if (isCriticalError || (!isTimeoutError && this._strict)) {
-        throw err;
+      if (!isTimeoutError && this._strict || isCriticalError) {
+        throw LiluGrantedError.from(err, [], tRoot.collect());
       } else {
         result = {
           trace: [],
@@ -923,8 +874,6 @@ export class Lilu {
         }
       }
     }
-
-    tRoot.merge(tEnv);
 
     result.ms = startTimer.click();
     return result;
