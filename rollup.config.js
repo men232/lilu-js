@@ -19,8 +19,8 @@ export default [
   {
     input: 'lib/index.umd.ts',
     output: [
-      { name, file: pkg.browser, format: 'umd', sourcemap: true },
-      { name, file: pkg.browser.replace('.js', '.min.js'), format: 'umd', sourcemap: true, plugins: [terser()] },
+      { name, file: './' + pkg.browser, format: 'umd', sourcemap: true },
+      { name, file: './' + pkg.browser.replace('.js', '.min.js'), format: 'umd', sourcemap: true, plugins: [terser()] },
     ],
     external: [],
     plugins: [
@@ -51,8 +51,8 @@ export default [
       babel({ ...babelNode, extensions, include: ['lib/**/*'], babelHelpers: 'bundled' }),
     ],
     output: [
-      { file: pkg.main, format: 'cjs', sourcemap: true },
-      { file: pkg.module, format: 'es', sourcemap: true }
+      { file: './' + pkg.main, format: 'cjs', sourcemap: true },
+      { file: './' + pkg.module, format: 'es', sourcemap: true }
     ]
   }
 ];
